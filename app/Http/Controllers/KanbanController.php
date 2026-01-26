@@ -25,11 +25,17 @@ class KanbanController extends Controller
         $currentIndex = array_search($dept, $flow);
         $nextDept = ($currentIndex !== false && isset($flow[$currentIndex + 1])) ? $flow[$currentIndex + 1] : null;
 
-        // Stats
+        // Stats for Current Dept
         $totalPcs = $items->sum('qty_pcs');
         $totalKg = $items->sum('weight_kg');
 
-        return view('kanban.index', compact('dept', 'lines', 'nextDept', 'totalPcs', 'totalKg'));
+        // Stats for All Departments (Navigation Bar)
+        $allStats = \App\Models\ProductionItem::selectRaw('current_dept, SUM(qty_pcs) as total_pcs, SUM(weight_kg) as total_kg')
+            ->groupBy('current_dept')
+            ->get()
+            ->keyBy('current_dept');
+
+        return view('kanban.index', compact('dept', 'lines', 'nextDept', 'totalPcs', 'totalKg', 'allStats', 'flow'));
     }
 
     public function move(Request $request)
@@ -68,5 +74,67 @@ class KanbanController extends Controller
         }
 
         return redirect()->route('kanban.index', $data['to_dept'])->with('success', count($items) . ' Items Moved to ' . ucfirst($data['to_dept']));
+    }
+    
+    public function reorder(Request $request)
+    {
+        $request->validate([
+            'department' => 'required',
+            'line' => 'required',
+            'from_pos' => 'required|integer',
+            'to_pos' => 'required|integer'
+        ]);
+
+        $dept = $request->department;
+        $line = $request->line;
+        $fromPos = $request->from_pos;
+        $toPos = $request->to_pos;
+
+        if ($fromPos === $toPos) {
+            return back()->with('success', 'Posisi sama, tidak ada perubahan.');
+        }
+
+        // Get items in standard order (FIFO)
+        $items = \App\Models\ProductionItem::where('current_dept', $dept)
+            ->where('line_number', $line)
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        // Validate positions
+        if (!$items->has($fromPos - 1) || !$items->has($toPos - 1)) {
+           return back()->withErrors(['msg' => 'Nomor antrian tidak valid.']); 
+        }
+
+        $itemToMove = $items[$fromPos - 1]; // 0-indexed
+        $targetItem = $items[$toPos - 1]; // 0-indexed
+
+        // Logic: To insert BEFORE the target item, we need a timestamp slightly older than the target item.
+        // But if we just change one timestamp, we might clash or need to shift everyone.
+        // Simplest "Hack":
+        // 1. Get all IDs in the current sorted order.
+        // 2. Manipulate the array to the desired order.
+        // 3. Re-assign timestamps to ALL items in this line based on the new array order.
+        // This guarantees consistency and integrity without complex shifting logic.
+        
+        $orderedItems = $items->all();
+        
+        // Remove item from old position
+        $moved = array_splice($orderedItems, $fromPos - 1, 1)[0];
+        
+        // Insert item at new position
+        array_splice($orderedItems, $toPos - 1, 0, [$moved]);
+
+        // Re-timestamp
+        // We will start from the oldest original timestamp and increment by 1 second for each item in the new order.
+        // This might slightly drift the "real" creation time, but for a Kanban queue, relative order is what counts.
+        $baseTime = $items->first()->created_at->subMinutes(10); // Start a bit earlier to avoid clashes
+
+        foreach ($orderedItems as $index => $item) {
+            $item->timestamps = false; // Disable auto updating 'updated_at' to keep noise down if desired, but actually we want to change created_at
+            $item->created_at = $baseTime->copy()->addSeconds($index);
+            $item->save();
+        }
+
+        return back()->with('success', 'Antrian berhasil diubah.');
     }
 }

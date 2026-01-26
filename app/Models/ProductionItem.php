@@ -11,6 +11,7 @@ class ProductionItem extends Model
         'item_name',
         'qty_pcs',
         'weight_kg',
+        'customer',
         'current_dept',
         'line_number',
         'dept_entry_at',
