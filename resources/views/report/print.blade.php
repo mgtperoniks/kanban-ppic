@@ -1,18 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SPK - {{ ucfirst($department) }} Line {{ $line }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ asset('js/tailwindcss.js') }}"></script>
     <style>
         @media print {
-            body { -webkit-print-color-adjust: exact; }
-            .no-print { display: none; }
+            body {
+                -webkit-print-color-adjust: exact;
+            }
+
+            .no-print {
+                display: none;
+            }
         }
-        body { font-family: 'Times New Roman', serif; }
+
+        body {
+            font-family: 'Times New Roman', serif;
+        }
     </style>
 </head>
+
 <body class="bg-gray-100 p-8 print:bg-white print:p-0" onload="window.print()">
 
     <div class="max-w-4xl mx-auto bg-white p-8 shadow-sm print:shadow-none print:w-full">
@@ -48,14 +58,16 @@
             </thead>
             <tbody>
                 @foreach($results as $index => $item)
-                <tr>
-                    <td class="border border-black px-2 py-1.5 text-center">{{ $index + 1 }}</td>
-                    <td class="border border-black px-2 py-1.5 font-bold">{{ $item->heat_number }}</td>
-                    <td class="border border-black px-2 py-1.5">{{ $item->item_name }}</td>
-                    <td class="border border-black px-2 py-1.5 text-center">{{ number_format($item->qty_pcs) }}</td>
-                    <td class="border border-black px-2 py-1.5 text-center">{{ number_format($item->weight_kg, 1) }}</td>
-                    <td class="border border-black px-2 py-1.5 text-center">{{ number_format($item->aging_days, 1) }}</td>
-                </tr>
+                    <tr>
+                        <td class="border border-black px-2 py-1.5 text-center">{{ $index + 1 }}</td>
+                        <td class="border border-black px-2 py-1.5 font-bold">{{ $item->heat_number }}</td>
+                        <td class="border border-black px-2 py-1.5">{{ $item->item_name }}</td>
+                        <td class="border border-black px-2 py-1.5 text-center">{{ number_format($item->qty_pcs) }}</td>
+                        <td class="border border-black px-2 py-1.5 text-center">{{ number_format($item->weight_kg, 1) }}
+                        </td>
+                        <td class="border border-black px-2 py-1.5 text-center">{{ number_format($item->aging_days, 1) }}
+                        </td>
+                    </tr>
                 @endforeach
             </tbody>
             <tfoot>
@@ -83,4 +95,5 @@
     </div>
 
 </body>
+
 </html>
