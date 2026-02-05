@@ -8,10 +8,25 @@ class KanbanController extends Controller
 {
     public function index($dept)
     {
-        $items = \App\Models\ProductionItem::where('current_dept', $dept)
-            ->orderBy('line_number')
-            ->orderBy('created_at')
-            ->get();
+        $flow = ['rencana_cor', 'cor', 'netto', 'bubut_od', 'bubut_cnc', 'bor', 'finish'];
+
+        if ($dept === 'rencana_cor') {
+            $items = \App\Models\ProductionPlan::where('qty_remaining', '>', 0)
+                ->orderBy('line_number')
+                ->orderBy('created_at')
+                ->get();
+
+            $totalPcs = $items->sum('qty_remaining');
+            $totalKg = $items->sum('weight');
+        } else {
+            $items = \App\Models\ProductionItem::where('current_dept', $dept)
+                ->orderBy('line_number')
+                ->orderBy('created_at')
+                ->get();
+
+            $totalPcs = $items->sum('qty_pcs');
+            $totalKg = $items->sum('weight_kg');
+        }
 
         $lines = [
             1 => $items->where('line_number', 1),
@@ -21,19 +36,31 @@ class KanbanController extends Controller
         ];
 
         // Next Department Logic
-        $flow = ['cor', 'netto', 'bubut_od', 'bubut_cnc', 'bor', 'finish'];
         $currentIndex = array_search($dept, $flow);
         $nextDept = ($currentIndex !== false && isset($flow[$currentIndex + 1])) ? $flow[$currentIndex + 1] : null;
 
-        // Stats for Current Dept
-        $totalPcs = $items->sum('qty_pcs');
-        $totalKg = $items->sum('weight_kg');
-
         // Stats for All Departments (Navigation Bar)
-        $allStats = \App\Models\ProductionItem::selectRaw('current_dept, SUM(qty_pcs) as total_pcs, SUM(weight_kg) as total_kg')
+        $itemStats = \App\Models\ProductionItem::selectRaw('current_dept, SUM(qty_pcs) as total_pcs, SUM(weight_kg) as total_kg')
             ->groupBy('current_dept')
             ->get()
             ->keyBy('current_dept');
+
+        $planStats = \App\Models\ProductionPlan::where('qty_remaining', '>', 0)
+            ->selectRaw('SUM(qty_remaining) as total_pcs, SUM(weight) as total_kg')
+            ->first();
+
+        // Merge stats for navigation
+        $allStats = $itemStats->map(function ($stat) {
+            return (object) [
+                'total_pcs' => $stat->total_pcs,
+                'total_kg' => $stat->total_kg
+            ];
+        });
+
+        $allStats['rencana_cor'] = (object) [
+            'total_pcs' => $planStats->total_pcs ?? 0,
+            'total_kg' => $planStats->total_kg ?? 0
+        ];
 
         return view('kanban.index', compact('dept', 'lines', 'nextDept', 'totalPcs', 'totalKg', 'allStats', 'flow'));
     }
@@ -46,10 +73,10 @@ class KanbanController extends Controller
         ]);
 
         $items = \App\Models\ProductionItem::whereIn('id', $data['item_ids'])->get();
-        
+
         foreach ($items as $item) {
             $fromDept = $item->current_dept;
-            
+
             // Move Item
             $item->update([
                 'current_dept' => $data['to_dept'],
@@ -75,7 +102,7 @@ class KanbanController extends Controller
 
         return redirect()->route('kanban.index', $data['to_dept'])->with('success', count($items) . ' Items Moved to ' . ucfirst($data['to_dept']));
     }
-    
+
     public function reorder(Request $request)
     {
         $request->validate([
@@ -95,42 +122,36 @@ class KanbanController extends Controller
         }
 
         // Get items in standard order (FIFO)
-        $items = \App\Models\ProductionItem::where('current_dept', $dept)
-            ->where('line_number', $line)
-            ->orderBy('created_at', 'asc')
-            ->get();
+        if ($dept === 'rencana_cor') {
+            $items = \App\Models\ProductionPlan::where('line_number', $line)
+                ->where('qty_remaining', '>', 0)
+                ->orderBy('created_at', 'asc')
+                ->get();
+        } else {
+            $items = \App\Models\ProductionItem::where('current_dept', $dept)
+                ->where('line_number', $line)
+                ->orderBy('created_at', 'asc')
+                ->get();
+        }
 
         // Validate positions
         if (!$items->has($fromPos - 1) || !$items->has($toPos - 1)) {
-           return back()->withErrors(['msg' => 'Nomor antrian tidak valid.']); 
+            return back()->withErrors(['msg' => 'Nomor antrian tidak valid.']);
         }
 
-        $itemToMove = $items[$fromPos - 1]; // 0-indexed
-        $targetItem = $items[$toPos - 1]; // 0-indexed
-
-        // Logic: To insert BEFORE the target item, we need a timestamp slightly older than the target item.
-        // But if we just change one timestamp, we might clash or need to shift everyone.
-        // Simplest "Hack":
-        // 1. Get all IDs in the current sorted order.
-        // 2. Manipulate the array to the desired order.
-        // 3. Re-assign timestamps to ALL items in this line based on the new array order.
-        // This guarantees consistency and integrity without complex shifting logic.
-        
         $orderedItems = $items->all();
-        
+
         // Remove item from old position
         $moved = array_splice($orderedItems, $fromPos - 1, 1)[0];
-        
+
         // Insert item at new position
         array_splice($orderedItems, $toPos - 1, 0, [$moved]);
 
         // Re-timestamp
-        // We will start from the oldest original timestamp and increment by 1 second for each item in the new order.
-        // This might slightly drift the "real" creation time, but for a Kanban queue, relative order is what counts.
-        $baseTime = $items->first()->created_at->subMinutes(10); // Start a bit earlier to avoid clashes
+        $baseTime = $items->first()->created_at->subMinutes(10);
 
         foreach ($orderedItems as $index => $item) {
-            $item->timestamps = false; // Disable auto updating 'updated_at' to keep noise down if desired, but actually we want to change created_at
+            $item->timestamps = false;
             $item->created_at = $baseTime->copy()->addSeconds($index);
             $item->save();
         }

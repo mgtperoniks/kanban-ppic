@@ -50,10 +50,12 @@
                 </div>
             </div>
 
-            @if($nextDept)
+            @if($nextDept && $dept !== 'rencana_cor')
             <button onclick="submitMove()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-4 rounded shadow-sm text-sm flex items-center gap-2 transition-colors">
                 Proses ke {{ match($nextDept) { 'bubut_od' => 'Bubut OD', 'bubut_cnc' => 'Bubut CNC', default => ucfirst($nextDept) } }} <i class="fas fa-arrow-right"></i>
             </button>
+            @elseif($dept === 'rencana_cor')
+            <span class="bg-blue-50 text-blue-600 py-2 px-4 rounded text-sm font-bold border border-blue-200">Antrian PPIC</span>
             @else
             <span class="bg-gray-100 text-gray-500 py-2 px-4 rounded text-sm font-medium border border-gray-200">End of Line</span>
             @endif
@@ -73,69 +75,91 @@
                     <div class="bg-blue-600 text-white px-3 py-2 flex justify-between items-center shrink-0">
                         <h3 class="font-bold text-sm">Line {{ $lineNum }}</h3>
                         <div class="text-[10px] opacity-90 font-mono">
-                            {{ $items->count() }} HN <span class="mx-1 opacity-50">|</span> {{ number_format($items->sum('qty_pcs')) }} pcs <span class="mx-1 opacity-50">|</span> {{ number_format($items->sum('weight_kg')) }} kg
+                            @if($dept === 'rencana_cor')
+                                {{ $items->count() }} P.O <span class="mx-1 opacity-50">|</span> {{ number_format($items->sum('qty_remaining')) }} pcs <span class="mx-1 opacity-50">|</span> {{ number_format($items->sum('weight')) }} kg
+                            @else
+                                {{ $items->count() }} HN <span class="mx-1 opacity-50">|</span> {{ number_format($items->sum('qty_pcs')) }} pcs <span class="mx-1 opacity-50">|</span> {{ number_format($items->sum('weight_kg')) }} kg
+                            @endif
                         </div>
                     </div>
 
                     <!-- Items Container -->
-                    <div class="flex-1 overflow-y-auto p-2 space-y-2 bg-gray-50 custom-scrollbar">
+                    <div class="flex-1 overflow-y-auto p-1.5 space-y-2 bg-gray-50 custom-scrollbar">
                         @foreach($items as $item)
-                            @php
-                                $colorClass = 'border-l-[3px] ';
-                                $agingDays = $item->aging_days;
-                                $agingTextClass = 'text-gray-500';
-                                
-                                if($item->aging_color == 'green') {
-                                    $colorClass .= 'border-green-500';
-                                    $agingTextClass = 'text-green-600';
-                                } elseif($item->aging_color == 'yellow') {
-                                    $colorClass .= 'border-yellow-500';
-                                    $agingTextClass = 'text-yellow-600';
-                                } elseif($item->aging_color == 'orange') {
-                                    $colorClass .= 'border-orange-500';
-                                    $agingTextClass = 'text-orange-600';
-                                } else {
-                                    $colorClass .= 'border-red-500';
-                                    $agingTextClass = 'text-red-600';
-                                }
-                            @endphp
-
-                            <div class="relative bg-white p-2 rounded shadow-sm border border-gray-200 {{ $colorClass }} hover:shadow-md transition-shadow group">
-                                <!-- Top Row: Checkbox, Name, Heat No -->
-                                <div class="flex items-start gap-2">
-                                    <input type="checkbox" name="item_ids[]" value="{{ $item->id }}" class="mt-0.5 w-3.5 h-3.5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer flex-shrink-0">
+                            @if($dept === 'rencana_cor')
+                                <!-- Production Plan Card -->
+                                <div class="relative bg-white p-2 rounded shadow-sm border border-gray-200 border-l-[3px] border-l-blue-400 hover:shadow-md transition-shadow group">
+                                    <div class="flex flex-col gap-1 min-w-0">
+                                        <div class="flex justify-between items-start gap-1">
+                                            <div class="text-[11px] font-bold text-gray-800 leading-tight truncate flex-1" title="{{ $item->item_name }}">
+                                                {{ $item->item_name }}
+                                            </div>
+                                            <div class="text-[10px] font-bold text-blue-600 shrink-0">#{{ $loop->iteration }}</div>
+                                        </div>
+                                        
+                                        <div class="text-[10px] text-gray-500 font-mono italic">#{{ $item->po_number }}</div>
+                                        
+                                        <div class="flex items-center justify-between mt-1 pt-1 border-t border-gray-50">
+                                            <div class="flex gap-2 text-[10px] font-semibold text-slate-600">
+                                                <span>{{ number_format($item->qty_remaining) }} pcs</span>
+                                                <span class="text-gray-300">|</span>
+                                                <span>{{ number_format($item->weight) }} kg</span>
+                                            </div>
+                                            @if($item->customer)
+                                            <span class="text-[9px] bg-gray-100 text-gray-500 px-1 rounded uppercase font-bold truncate max-w-[50px]">
+                                                {{ $item->customer }}
+                                            </span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            @else
+                                <!-- Production Item Card (Heat Number) -->
+                                @php
+                                    $agingDays = $item->aging_days;
+                                    $agingTextClass = 'text-gray-500';
+                                    $borderColor = 'border-l-gray-400';
                                     
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex justify-between items-start">
-                                            <div class="text-xs font-bold text-gray-800 leading-tight truncate pr-1" title="{{ $item->item_name }}">{{ $item->item_name }}</div>
-                                            <div class="text-[10px] font-bold {{ $agingTextClass }} flex-shrink-0 bg-gray-50 px-1 rounded">
-                                                {{ number_format($agingDays, 0) }}h
+                                    if($item->aging_color == 'green') { $agingTextClass = 'text-green-600'; $borderColor = 'border-l-green-500'; }
+                                    elseif($item->aging_color == 'yellow') { $agingTextClass = 'text-yellow-600'; $borderColor = 'border-l-yellow-500'; }
+                                    elseif($item->aging_color == 'orange') { $agingTextClass = 'text-orange-600'; $borderColor = 'border-l-orange-500'; }
+                                    elseif($item->aging_color == 'red') { $agingTextClass = 'text-red-600'; $borderColor = 'border-l-red-500'; }
+                                @endphp
+
+                                <div class="relative bg-white p-2 rounded shadow-sm border border-gray-200 border-l-[3px] {{ $borderColor }} hover:shadow-md transition-shadow group">
+                                    <div class="flex items-start gap-1.5">
+                                        <input type="checkbox" name="item_ids[]" value="{{ $item->id }}" class="mt-0.5 w-3 h-3 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer shrink-0">
+                                        
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex justify-between items-start gap-1">
+                                                <div class="text-[11px] font-bold text-gray-800 leading-tight truncate" title="{{ $item->item_name }}">{{ $item->item_name }}</div>
+                                                <div class="text-[11px] font-bold {{ $agingTextClass }} shrink-0">{{ number_format($agingDays, 0) }}h</div>
+                                            </div>
+                                            
+                                            <div class="text-[10px] text-gray-500 font-mono mt-0.5 italic">#{{ $item->heat_number }}</div>
+
+                                            <div class="flex items-center justify-between mt-1 pt-1 border-t border-gray-50">
+                                                <div class="flex gap-2 text-[10px] font-semibold text-slate-600">
+                                                    <span>{{ $item->qty_pcs }} <span class="text-[8px] font-normal opacity-70 uppercase tracking-tighter">pcs</span></span>
+                                                    <span class="text-gray-300">|</span>
+                                                    <span>{{ $item->weight_kg }} <span class="text-[8px] font-normal opacity-70 uppercase tracking-tighter">kg</span></span>
+                                                </div>
+                                                
+                                                <div class="flex items-center gap-1">
+                                                    @if($item->customer)
+                                                    <span class="text-[9px] bg-gray-100 text-gray-500 px-1 rounded border border-gray-100 uppercase font-bold truncate max-w-[40px]" title="{{ $item->customer }}">
+                                                        {{ $item->customer }}
+                                                    </span>
+                                                    @endif
+                                                    <span class="text-[10px] font-bold text-slate-300 group-hover:text-blue-500 transition-colors">
+                                                        {{ $loop->iteration }}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div class="text-[10px] text-gray-500 leading-tight font-mono mt-0.5">#{{ $item->heat_number }}</div>
                                     </div>
                                 </div>
-
-                                <!-- Bottom Row: Metrics, Customer, Sequence -->
-                                <div class="flex items-center justify-between mt-1.5 pl-5.5 relative">
-                                    <div class="flex gap-2 text-[10px] text-gray-600 items-center">
-                                        <span class="flex items-center" title="Qty: {{ $item->qty_pcs }}"><i class="fas fa-cube text-blue-400 text-[8px] mr-1"></i>{{ $item->qty_pcs }}</span>
-                                        <span class="flex items-center" title="Weight: {{ $item->weight_kg }}"><i class="fas fa-weight-hanging text-green-400 text-[8px] mr-1"></i>{{ $item->weight_kg }}</span>
-                                        
-                                        <!-- Customer Bagde -->
-                                        @if($item->customer)
-                                        <span class="bg-gray-100 text-gray-600 px-1 rounded border border-gray-200 text-[9px] font-bold ml-1 uppercase truncate max-w-[50px]" title="{{ $item->customer }}">
-                                            {{ $item->customer }}
-                                        </span>
-                                        @endif
-                                    </div>
-
-                                    <!-- Sequence Number (Absolute Bottom Right) -->
-                                    <div class="absolute right-0 bottom-0 text-[10px] font-bold text-slate-300 group-hover:text-blue-500 transition-colors">
-                                        {{ $loop->iteration }}
-                                    </div>
-                                </div>
-                            </div>
+                            @endif
                         @endforeach
                     </div>
                 </div>

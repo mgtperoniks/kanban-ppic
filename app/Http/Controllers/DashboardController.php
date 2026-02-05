@@ -33,26 +33,40 @@ class DashboardController extends Controller
         $movements = \App\Models\ProductionHistory::where('moved_at', '>=', now()->subDays(7))
             ->get();
 
-        $lineStats = [
-            'pcs' => [1 => [], 2 => [], 3 => [], 4 => []],
-            'kg' => [1 => [], 2 => [], 3 => [], 4 => []],
+        // Stages to track (6 movements)
+        $stages = [
+            'netto' => 'Hasil Cor',
+            'bubut_od' => 'Hasil Netto',
+            'bubut_cnc' => 'Hasil Bubut OD',
+            'bor' => 'Hasil Bubut CNC',
+            'finish' => 'Hasil Bor',
+            'completed' => 'Hasil Finish',
         ];
 
-        foreach ($dates as $date) {
-            foreach ([1, 2, 3, 4] as $line) {
-                $dayMoves = $movements->filter(function ($item) use ($date, $line) {
-                    return $item->moved_at->format('Y-m-d') === $date && $item->line_number == $line;
+        $lineStats = [
+            'pcs' => [],
+            'kg' => [],
+        ];
+
+        foreach ($stages as $stageKey => $stageName) {
+            $lineStats['pcs'][$stageName] = [];
+            $lineStats['kg'][$stageName] = [];
+
+            foreach ($dates as $date) {
+                $dayMoves = $movements->filter(function ($item) use ($date, $stageKey) {
+                    return $item->moved_at->format('Y-m-d') === $date && $item->to_dept === $stageKey;
                 });
 
-                $lineStats['pcs'][$line][] = $dayMoves->sum('qty_pcs');
-                $lineStats['kg'][$line][] = $dayMoves->sum('weight_kg');
+                $lineStats['pcs'][$stageName][] = $dayMoves->sum('qty_pcs');
+                $lineStats['kg'][$stageName][] = $dayMoves->sum('weight_kg');
             }
         }
-        
-        return view('dashboard', compact('stats', 'depts', 'dates', 'lineStats'));
+
+        return view('dashboard', compact('stats', 'depts', 'dates', 'lineStats', 'stages'));
     }
 
-    public function getChartData() {
+    public function getChartData()
+    {
         // ... AJAX structure if needed, or pass in view.
         // I will do migration first if I want to be 100% accurate.
     }

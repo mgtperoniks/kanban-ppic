@@ -1,147 +1,252 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="bg-white shadow-md rounded-lg p-4">
-    <div class="flex justify-between items-center mb-4">
-        <h1 class="text-xl font-bold text-gray-800">Input Data: {{ ucfirst($dept) }}</h1>
-        <button onclick="submitData()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-4 rounded text-sm">
-            Simpan Data
-        </button>
+    <div class="bg-white shadow-md rounded-lg p-6 h-full flex flex-col">
+        <!-- Header Section -->
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800">Input Produksi: <span
+                        class="text-blue-600">{{ match ($dept) { 'bubut_od' => 'Bubut OD', 'bubut_cnc' => 'Bubut CNC', default => ucfirst($dept)} }}</span>
+                </h1>
+                <p class="text-sm text-slate-500 mt-1">Gunakan tabel di bawah untuk melaporkan hasil pekerjaan harian.</p>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <!-- Data Date Selector -->
+                <div class="flex flex-col">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tanggal
+                        Pekerjaan</label>
+                    <input type="date" id="production_date" value="{{ date('Y-m-d') }}"
+                        class="border-slate-300 rounded-lg text-sm font-bold text-slate-700 shadow-sm focus:ring-blue-500">
+                </div>
+
+                <div class="h-10 w-px bg-slate-200 mx-2"></div>
+
+                <div class="flex gap-2">
+                    <a href="{{ route('input.index', $dept) }}"
+                        class="bg-white hover:bg-slate-50 text-slate-600 font-bold py-2 px-4 rounded-lg text-sm flex items-center border border-slate-300 transition-all shadow-sm">
+                        <i class="fas fa-arrow-left mr-2"></i> Kembali
+                    </a>
+                    <button onclick="confirmAndSubmit()"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-md text-sm transition-all flex items-center gap-2">
+                        <i class="fas fa-save"></i> Simpan Data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info/Instructions -->
+        <div class="mb-4 p-4 bg-blue-50 border-l-4 border-blue-400 rounded-r-lg flex justify-between items-center">
+            <div class="text-[11px] text-blue-800">
+                <p class="font-bold mb-1"><i class="fas fa-info-circle mr-1"></i> Petunjuk Pengisian:</p>
+                @if($dept === 'cor')
+                    <p>Masukkan data aktual casting. Pastikan <b>Item Code</b> dan <b>Line</b> sesuai dengan Rencana Cor untuk
+                        pemotongan otomatis.</p>
+                @else
+                    <p>Masukkan kombinasi <b>Code + Heat Number</b> untuk memindahkan barang ke departemen berikutnya.</p>
+                    <p>Card akan terpisah (split) otomatis jika jumlah <b>Hasil + Rusak</b> kurang dari stok yang ada di
+                        departemen ini.</p>
+                @endif
+            </div>
+            <div class="text-right">
+                <span
+                    class="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase border border-blue-200 shadow-sm">
+                    Mode: {{ $dept === 'cor' ? 'New Production' : 'Item Movement' }}
+                </span>
+            </div>
+        </div>
+
+        <!-- Handsontable Container -->
+        <div id="hotContainer" class="flex-1 overflow-hidden border border-slate-200 rounded-lg shadow-inner bg-slate-50">
+        </div>
+
+        <!-- Error/Notification Area -->
+        <div id="errorArea" class="mt-4 hidden animate-pulse">
+            <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                <h4 class="text-red-800 text-xs font-bold flex items-center gap-2 mb-2">
+                    <i class="fas fa-exclamation-triangle"></i> Beberapa baris gagal diproses:
+                </h4>
+                <ul id="errorList" class="text-[10px] text-red-600 list-disc list-inside space-y-1"></ul>
+            </div>
+        </div>
     </div>
 
-    <div class="mb-4 text-sm text-gray-600">
-        <p><strong>Panduan:</strong> Copy & Paste data dari Excel (Format: Heat No | Item Name | Qty | Weight). Data akan masuk ke Line 1.</p>
-    </div>
+    <script>
+        let hot;
+        const container = document.getElementById('hotContainer');
+        const dept = "{{ $dept }}";
 
-    <div class="overflow-x-auto">
-        <table class="min-w-full border-collapse border border-gray-300 text-sm" id="inputTable">
-            <thead>
-                <tr class="bg-gray-100">
-                    <th class="border border-gray-300 px-2 py-1">Heat Number</th>
-                    <th class="border border-gray-300 px-2 py-1">Item Name</th>
-                    <th class="border border-gray-300 px-2 py-1 w-24">Qty (PCS)</th>
-                    <th class="border border-gray-300 px-2 py-1 w-24">Weight (KG)</th>
-                    <th class="border border-gray-300 px-2 py-1 w-12">Action</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody">
-                <tr class="hover:bg-gray-50">
-                    <td class="border border-gray-300 p-0"><input type="text" class="w-full h-full px-2 py-1 focus:outline-none" placeholder="Paste here..."></td>
-                    <td class="border border-gray-300 p-0"><input type="text" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-                    <td class="border border-gray-300 p-0"><input type="number" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-                    <td class="border border-gray-300 p-0"><input type="number" step="0.01" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-                    <td class="border border-gray-300 p-0 text-center"><button class="text-red-500 font-bold" onclick="removeRow(this)">×</button></td>
-                </tr>
-            </tbody>
-        </table>
-        <button onclick="addRow()" class="mt-2 text-blue-600 text-sm font-semibold">+ Tambah Baris</button>
-    </div>
-</div>
+        // Define Columns based on Department
+        let colHeaders, columns, schema;
 
-<script>
-    const tableBody = document.getElementById('tableBody');
+        if (dept === 'cor') {
+            colHeaders = ['Code', 'Heat No', 'Item Code', 'Item Name', 'AISI', 'Size', 'Bruto (KG)', 'Netto (KG)', 'Finish (KG)', 'Qty (PCS)', 'Line', 'Customer'];
+            columns = [
+                { type: 'text' }, { type: 'text' }, { type: 'text' }, { type: 'text' },
+                { type: 'text' }, { type: 'text' }, { type: 'numeric' }, { type: 'numeric' },
+                { type: 'numeric' }, { type: 'numeric' }, { type: 'numeric' }, { type: 'text' }
+            ];
+            schema = (row) => ({
+                code: row[0], heat_number: row[1], item_code: row[2], item_name: row[3],
+                aisi: row[4], size: row[5], bruto_weight: row[6], netto_weight: row[7],
+                finish_weight: row[8], qty_pcs: row[9], weight_kg: row[7] || row[6] || 0,
+                line_number: row[10], customer: row[11]
+            });
+        } else {
+            // Movement Stages: Netto, Bubut, Bor, Finish
+            colHeaders = ['Code', 'Heat Number', 'Item Name', 'Finish Weight (KG)', 'Hasil (PCS)', 'Rusak (PCS)'];
+            columns = [
+                { type: 'text' }, { type: 'text' }, { type: 'text' },
+                { type: 'numeric' }, { type: 'numeric' }, { type: 'numeric' }
+            ];
 
-    // Handle Paste logic
-    tableBody.addEventListener('paste', function(e) {
-        e.preventDefault();
-        const clipboardData = e.clipboardData || window.clipboardData;
-        const pastedData = clipboardData.getData('Text');
-        
-        if (!pastedData) return;
-
-        const rows = pastedData.split(/\r\n|\n|\r/);
-        
-        // Remove empty last row if exists
-        if (rows.length > 0 && rows[rows.length - 1].trim() === '') {
-            rows.pop();
-        }
-
-        // Clear only if pasting on the first empty row, otherwise append?
-        // Let's just append for now, or replace current row if it's empty
-        
-        // Simplest: Just append new rows
-        rows.forEach(row => {
-            const cols = row.split(/\t/);
-            if (cols.length < 1) return;
-
-            const newRow = document.createElement('tr');
-            newRow.classList.add('hover:bg-gray-50');
-            newRow.innerHTML = `
-                <td class="border border-gray-300 p-0"><input type="text" value="${cols[0] || ''}" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-                <td class="border border-gray-300 p-0"><input type="text" value="${cols[1] || ''}" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-                <td class="border border-gray-300 p-0"><input type="number" value="${cols[2] || ''}" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-                <td class="border border-gray-300 p-0"><input type="number" step="0.01" value="${cols[3] || ''}" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-                <td class="border border-gray-300 p-0 text-center"><button class="text-red-500 font-bold" onclick="removeRow(this)">×</button></td>
-            `;
-            tableBody.appendChild(newRow);
-        });
-
-        // Remove the initial empty row if it's still empty and we pasted stuff
-        const firstRow = tableBody.querySelector('tr');
-        if (firstRow) {
-             const inputs = firstRow.querySelectorAll('input');
-             let isEmpty = true;
-             inputs.forEach(input => { if(input.value) isEmpty = false; });
-             if (isEmpty && rows.length > 0) firstRow.remove();
-        }
-    });
-
-    function addRow() {
-        const newRow = document.createElement('tr');
-        newRow.classList.add('hover:bg-gray-50');
-        newRow.innerHTML = `
-            <td class="border border-gray-300 p-0"><input type="text" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-            <td class="border border-gray-300 p-0"><input type="text" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-            <td class="border border-gray-300 p-0"><input type="number" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-            <td class="border border-gray-300 p-0"><input type="number" step="0.01" class="w-full h-full px-2 py-1 focus:outline-none"></td>
-            <td class="border border-gray-300 p-0 text-center"><button class="text-red-500 font-bold" onclick="removeRow(this)">×</button></td>
-        `;
-        tableBody.appendChild(newRow);
-    }
-
-    function removeRow(btn) {
-        btn.closest('tr').remove();
-    }
-
-    function submitData() {
-        const rows = tableBody.querySelectorAll('tr');
-        const items = [];
-
-        rows.forEach(row => {
-            const inputs = row.querySelectorAll('input');
-            const heat = inputs[0].value.trim();
-            const name = inputs[1].value.trim();
-            const qty = inputs[2].value.trim();
-            const weight = inputs[3].value.trim();
-
-            if (heat && name && qty && weight) {
-                items.push({
-                    heat_number: heat,
-                    item_name: name,
-                    qty_pcs: parseInt(qty),
-                    weight_kg: parseFloat(weight)
+            if (dept === 'bubut_cnc') {
+                colHeaders.splice(3, 0, 'Bubut Weight (KG)');
+                columns.splice(3, 0, { type: 'numeric' });
+                schema = (row) => ({
+                    code: row[0], heat_number: row[1], item_name: row[2],
+                    bubut_weight: row[3], finish_weight: row[4],
+                    hasil: row[5], rusak: row[6],
+                    qty_pcs: (parseInt(row[5]) || 0) + (parseInt(row[6]) || 0) // Total reporting
+                });
+            } else {
+                schema = (row) => ({
+                    code: row[0], heat_number: row[1], item_name: row[2],
+                    finish_weight: row[3], hasil: row[4], rusak: row[5],
+                    qty_pcs: (parseInt(row[4]) || 0) + (parseInt(row[5]) || 0)
                 });
             }
-        });
-
-        if (items.length === 0) {
-            alert('Please input at least one item.');
-            return;
         }
 
-        axios.post('{{ route('input.store', $dept) }}', { items: items })
-            .then(res => {
-                alert(res.data.message);
-                if (res.data.redirect) {
-                    window.location.href = res.data.redirect;
-                } else {
-                    window.location.reload();
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                alert('Error submitting data. Check console.');
+        const initialData = Array.from({ length: 30 }, () => Array(colHeaders.length).fill(null));
+
+        hot = new Handsontable(container, {
+            data: initialData,
+            rowHeaders: true,
+            colHeaders: colHeaders,
+            columns: columns,
+            height: '100%',
+            width: '100%',
+            stretchH: 'all',
+            manualColumnResize: true,
+            contextMenu: true,
+            rowHeights: 35,
+            licenseKey: 'non-commercial-and-evaluation'
+        });
+
+        async function confirmAndSubmit() {
+            const prodDate = document.getElementById('production_date').value;
+            if (!prodDate) {
+                Swal.fire('Error', 'Pilih tanggal pekerjaan terlebih dahulu!', 'error');
+                return;
+            }
+
+            const { value: confirmed } = await Swal.fire({
+                title: 'Konfirmasi Simpan',
+                html: `Apakah tanggal pekerjaan <b>${prodDate}</b> sudah sesuai dengan data yang Anda upload?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Ya, Sudah Sesuai',
+                cancelButtonText: 'Batal',
+                confirmButtonColor: '#2563eb'
             });
-    }
-</script>
+
+            if (confirmed) {
+                submitData(prodDate);
+            }
+        }
+
+        function submitData(prodDate) {
+            const rawData = hot.getData();
+            const items = [];
+
+            rawData.forEach(row => {
+                // Minimum validation: Code + Heat or Item Code
+                if (row[0] && row[1]) {
+                    items.push(schema(row));
+                }
+            });
+
+            if (items.length === 0) {
+                Swal.fire('Info', 'Minimal masukkan satu baris data lengkap.', 'info');
+                return;
+            }
+
+            Swal.fire({
+                title: 'Memproses...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
+            });
+
+            axios.post('{{ route('input.store', $dept) }}', {
+                production_date: prodDate,
+                items: items
+            })
+                .then(res => {
+                    Swal.close();
+                    if (res.data.success) {
+                        Swal.fire({
+                            title: 'Berhasil!',
+                            text: res.data.message,
+                            icon: 'success',
+                            timer: 2000,
+                            showConfirmButton: false
+                        }).then(() => {
+                            window.location.href = res.data.redirect;
+                        });
+                    } else {
+                        handleErrors(res.data.errors, res.data.message);
+                    }
+                })
+                .catch(err => {
+                    Swal.close();
+                    console.error(err);
+                    Swal.fire('Gagal', 'Terjadi kesalahan sistem. Periksa konsol.', 'error');
+                });
+        }
+
+        function handleErrors(errors, message) {
+            const errorArea = document.getElementById('errorArea');
+            const errorList = document.getElementById('errorList');
+
+            errorArea.classList.remove('hidden');
+            errorList.innerHTML = '';
+
+            errors.forEach(err => {
+                const li = document.createElement('li');
+                li.textContent = err;
+                errorList.appendChild(li);
+            });
+
+            Swal.fire({
+                title: 'Beberapa Data Gagal',
+                text: message,
+                icon: 'warning',
+                confirmButtonText: 'Tinjau Kesalahan'
+            });
+        }
+    </script>
+
+    <style>
+        .handsontable th {
+            background-color: #f8fafc !important;
+            font-weight: 800 !important;
+            font-size: 11px !important;
+            text-transform: uppercase;
+            color: #475569 !important;
+            vertical-align: middle !important;
+            border-bottom: 2px solid #e2e8f0 !important;
+        }
+
+        .handsontable td {
+            font-size: 12px !important;
+            color: #1e293b !important;
+            vertical-align: middle !important;
+        }
+
+        .htRowHeaders th {
+            font-size: 10px !important;
+            color: #94a3b8 !important;
+        }
+    </style>
 @endsection

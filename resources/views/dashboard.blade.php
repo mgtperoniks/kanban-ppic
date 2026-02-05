@@ -38,20 +38,41 @@
             </div>
         </div>
 
-        <!-- Charts Row 2: Movement History -->
-        <div class="grid grid-cols-2 gap-6 mb-6">
-            <div class="bg-white rounded-lg shadow p-4">
-                <h3 class="font-bold text-gray-700 mb-4">Perpindahan Produksi (PCS) - 7 Hari</h3>
-                <div class="relative h-64">
-                    <canvas id="movePcsChart"></canvas>
+        <!-- Charts Row 2: 12 Individual Movement Charts (6 Stages x 2 Metrics) -->
+        <h2 class="text-xl font-bold text-gray-800 mb-4 mt-8 flex items-center gap-2">
+            <i class="fas fa-chart-line text-blue-600"></i> Detail Perpindahan Produksi (7 Hari)
+        </h2>
+
+        <div class="space-y-8 pb-12">
+            @foreach($stages as $stageKey => $stageName)
+                <div class="grid grid-cols-2 gap-6">
+                    <!-- PCS Chart for this stage -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-slate-700">{{ $stageName }} (PCS)</h3>
+                            <span
+                                class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded uppercase tracking-wider">Unit:
+                                PCS</span>
+                        </div>
+                        <div class="relative h-48">
+                            <canvas id="chart_pcs_{{ $stageKey }}"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- KG Chart for this stage -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-5 hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-slate-700">{{ $stageName }} (KG)</h3>
+                            <span
+                                class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded uppercase tracking-wider">Unit:
+                                KG</span>
+                        </div>
+                        <div class="relative h-48">
+                            <canvas id="chart_kg_{{ $stageKey }}"></canvas>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4">
-                <h3 class="font-bold text-gray-700 mb-4">Perpindahan Produksi (KG) - 7 Hari</h3>
-                <div class="relative h-64">
-                    <canvas id="moveKgChart"></canvas>
-                </div>
-            </div>
+            @endforeach
         </div>
     </div>
 
@@ -61,59 +82,92 @@
         const stats = @json($stats);
         const dates = @json($dates);
         const lineStats = @json($lineStats);
+        const stagesList = @json($stages);
 
-        // Helpers
+        // 1. Distribution Charts (Donut) - Existing
         const formatDepts = depts.map(d => d.charAt(0).toUpperCase() + d.slice(1));
         const dataPcs = depts.map(d => stats[d].pcs);
         const dataKg = depts.map(d => stats[d].kg);
+        const donutColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
-        // Distribution Charts (Donut)
+        const donutOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } };
+
         new Chart(document.getElementById('distPcsChart'), {
-            type: 'doughnut',
-            data: {
-                labels: formatDepts,
-                datasets: [{
-                    data: dataPcs,
-                    backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
+            type: 'doughnut', data: { labels: formatDepts, datasets: [{ data: dataPcs, backgroundColor: donutColors }] }, options: donutOptions
         });
-
         new Chart(document.getElementById('distKgChart'), {
-            type: 'doughnut',
-            data: {
-                labels: formatDepts,
-                datasets: [{
-                    data: dataKg,
-                    backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
+            type: 'doughnut', data: { labels: formatDepts, datasets: [{ data: dataKg, backgroundColor: donutColors }] }, options: donutOptions
         });
 
-        // Movement Charts (Line)
-        const lineColors = { 1: '#3b82f6', 2: '#10b981', 3: '#f59e0b', 4: '#ef4444' };
+        // 2. Individual Line Charts (12 Charts with 4 machine lines each)
+        const lineColors = { 
+            1: '#3b82f6', // Blue (Line 1)
+            2: '#10b981', // Green (Line 2)
+            3: '#f59e0b', // Yellow/Orange (Line 3)
+            4: '#ef4444'  // Red (Line 4)
+        };
 
-        function createLineConfig(label, dataSet) {
-            return {
+        const chartOptions = (title) => ({
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: { 
+                legend: { 
+                    display: true, 
+                    position: 'top', 
+                    align: 'end',
+                    labels: { boxWidth: 8, padding: 10, font: { size: 9, weight: 'bold' }, usePointStyle: true }
+                }, 
+                tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 10 }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 8 }, color: '#94a3b8' }},
+                x: { grid: { display: false }, ticks: { font: { size: 8 }, color: '#94a3b8' }}
+            }
+        });
+
+        // Loop through stages and metrics to initialize 12 charts
+        Object.keys(stagesList).forEach(stageKey => {
+            const stageName = stagesList[stageKey];
+
+            // PCS Chart
+            new Chart(document.getElementById(`chart_pcs_${stageKey}`), {
                 type: 'line',
                 data: {
-                    labels: dates,
+                    labels: dates.map(d => d.split('-')[2]),
                     datasets: [1, 2, 3, 4].map(line => ({
-                        label: 'Line ' + line,
-                        data: dataSet[line],
+                        label: 'L' + line,
+                        data: lineStats['pcs'][stageName][line],
                         borderColor: lineColors[line],
+                        backgroundColor: lineColors[line] + '10',
+                        fill: false,
                         tension: 0.3,
-                        fill: false
+                        pointRadius: 2,
+                        borderWidth: 1.5
                     }))
                 },
-                options: { responsive: true, maintainAspectRatio: false }
-            };
-        }
+                options: chartOptions(stageName + ' PCS')
+            });
 
-        new Chart(document.getElementById('movePcsChart'), createLineConfig('PCS', lineStats.pcs));
-        new Chart(document.getElementById('moveKgChart'), createLineConfig('KG', lineStats.kg));
+            // KG Chart
+            new Chart(document.getElementById(`chart_kg_${stageKey}`), {
+                type: 'line',
+                data: {
+                    labels: dates.map(d => d.split('-')[2]),
+                    datasets: [1, 2, 3, 4].map(line => ({
+                        label: 'L' + line,
+                        data: lineStats['kg'][stageName][line],
+                        borderColor: lineColors[line],
+                        backgroundColor: lineColors[line] + '10',
+                        fill: false,
+                        tension: 0.3,
+                        pointRadius: 2,
+                        borderWidth: 1.5
+                    }))
+                },
+                options: chartOptions(stageName + ' KG')
+            });
+        });
 
     </script>
 @endsection
