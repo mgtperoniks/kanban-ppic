@@ -19,6 +19,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard/defects', [\App\Http\Controllers\DefectDashboardController::class, 'index'])->name('dashboard.defects');
 
     // Plan Routes
     Route::get('/plan', [PlanController::class, 'index'])->name('plan.index');
@@ -39,4 +40,17 @@ Route::middleware(['auth'])->group(function () {
     // Report Routes
     Route::get('/report', [ReportController::class, 'index'])->name('report.index');
     Route::get('/report/export/{type}', [ReportController::class, 'export'])->name('report.export');
+
+    // Defect Report Routes
+    Route::get('/report-defects', [\App\Http\Controllers\DefectReportController::class, 'index'])->name('report-defects.index');
+    Route::get('/report-defects/export/{type}', [\App\Http\Controllers\DefectReportController::class, 'export'])->name('report-defects.export');
+
+    // Defect Settings
+    Route::get('/settings/defect-types', [\App\Http\Controllers\DefectTypeController::class, 'index'])->name('settings.defect-types.index');
+    Route::post('/settings/defect-types', [\App\Http\Controllers\DefectTypeController::class, 'store'])->name('settings.defect-types.store');
+    Route::delete('/settings/defect-types/{defectType}', [\App\Http\Controllers\DefectTypeController::class, 'destroy'])->name('settings.defect-types.destroy');
+
+    // Defect Entry
+    Route::get('/defects/{dept}', [\App\Http\Controllers\DefectController::class, 'index'])->name('defects.index');
+    Route::post('/defects/{item}', [\App\Http\Controllers\DefectController::class, 'store'])->name('defects.store');
 });

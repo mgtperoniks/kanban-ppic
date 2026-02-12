@@ -57,7 +57,7 @@ class InputController extends Controller
             'items.*.finish_weight' => 'nullable|numeric',
             'items.*.po_number' => 'nullable|string',
             'items.*.customer' => 'nullable|string',
-            'items.*.line_number' => 'nullable|integer',
+            'items.*.line_number' => 'nullable',
         ]);
 
         $productionDate = $data['production_date'];
@@ -68,116 +68,125 @@ class InputController extends Controller
         $processedCount = 0;
         $errors = [];
 
-        foreach ($data['items'] as $item) {
-            if ($dept === 'cor') {
-                // COR INPUT: Creates new items in 'netto' from Plan
-                // (Existing logic refactored for new fields)
-                $plan = \App\Models\ProductionPlan::where('item_code', $item['item_code'])
-                    ->where('line_number', $item['line_number'])
-                    ->where('qty_remaining', '>', 0)
-                    ->orderBy('created_at', 'asc')
-                    ->first();
-
-                $planId = null;
-                if ($plan) {
-                    $planId = $plan->id;
-                    $plan->decrement('qty_remaining', $item['qty_pcs']);
-                    $plan->update(['status' => ($plan->qty_remaining <= 0 ? 'completed' : 'active')]);
+        try {
+            foreach ($data['items'] as $item) {
+                // Extract only digits from line_number (e.g., "LINE 4" or "4" -> 4)
+                $lineNumber = null;
+                if (isset($item['line_number'])) {
+                    $lineNumber = (int) filter_var($item['line_number'], FILTER_SANITIZE_NUMBER_INT) ?: null;
                 }
 
-                $newItem = \App\Models\ProductionItem::create([
-                    'plan_id' => $planId,
-                    'code' => $item['code'] ?? null,
-                    'heat_number' => $item['heat_number'] ?? null,
-                    'item_code' => $item['item_code'],
-                    'item_name' => $item['item_name'],
-                    'qty_pcs' => $item['qty_pcs'],
-                    'weight_kg' => $item['weight_kg'] ?? 0,
-                    'bruto_weight' => $item['bruto_weight'] ?? null,
-                    'netto_weight' => $item['netto_weight'] ?? null,
-                    'bubut_weight' => $item['bubut_weight'] ?? null,
-                    'finish_weight' => $item['finish_weight'] ?? null,
-                    'po_number' => $item['po_number'] ?? ($plan->po_number ?? null),
-                    'customer' => $item['customer'] ?? ($plan->customer ?? null),
-                    // User said: "Input Cor ... (maka barang ini sekarang ada didepartemen netto)"
-                    'current_dept' => 'netto',
-                    'line_number' => $item['line_number'],
-                    'dept_entry_at' => now(),
-                    'production_date' => $productionDate,
-                ]);
+                if ($dept === 'cor') {
+                    // COR INPUT: Creates new items in 'netto' from Plan
+                    $plan = \App\Models\ProductionPlan::where('item_code', $item['item_code'])
+                        ->where('line_number', $lineNumber)
+                        ->where('qty_remaining', '>', 0)
+                        ->orderBy('created_at', 'asc')
+                        ->first();
 
-                \App\Models\ProductionHistory::create([
-                    'item_id' => $newItem->id,
-                    'from_dept' => 'cor',
-                    'to_dept' => 'netto',
-                    'line_number' => $item['line_number'],
-                    'qty_pcs' => $item['qty_pcs'],
-                    'weight_kg' => $newItem->weight_kg,
-                    'moved_at' => now(),
-                ]);
+                    $planId = null;
+                    if ($plan) {
+                        $planId = $plan->id;
+                        $plan->decrement('qty_remaining', $item['qty_pcs']);
+                        $plan->update(['status' => ($plan->qty_remaining <= 0 ? 'completed' : 'active')]);
+                    }
 
-                $processedCount++;
-            } else {
-                // OTHER DEPARTMENTS: Moves existing items forward
-                $qtyHasil = (int) ($item['hasil'] ?? 0);
-                $qtyRusak = (int) ($item['rusak'] ?? 0);
-                $totalReported = $qtyHasil + $qtyRusak;
+                    $newItem = \App\Models\ProductionItem::create([
+                        'plan_id' => $planId,
+                        'code' => $item['code'] ?? null,
+                        'heat_number' => $item['heat_number'] ?? null,
+                        'item_code' => $item['item_code'],
+                        'item_name' => $item['item_name'],
+                        'qty_pcs' => $item['qty_pcs'],
+                        'weight_kg' => $item['weight_kg'] ?? null,
+                        'bruto_weight' => $item['bruto_weight'] ?? null,
+                        'netto_weight' => $item['netto_weight'] ?? null,
+                        'bubut_weight' => $item['bubut_weight'] ?? null,
+                        'finish_weight' => $item['finish_weight'] ?? null,
+                        'po_number' => $item['po_number'] ?? ($plan->po_number ?? null),
+                        'customer' => $item['customer'] ?? ($plan->customer ?? null),
+                        'current_dept' => 'netto',
+                        'line_number' => $lineNumber,
+                        'dept_entry_at' => now(),
+                        'production_date' => $productionDate,
+                    ]);
 
-                if ($totalReported <= 0)
-                    continue;
+                    \App\Models\ProductionHistory::create([
+                        'item_id' => $newItem->id,
+                        'from_dept' => 'cor',
+                        'to_dept' => 'netto',
+                        'line_number' => $lineNumber,
+                        'qty_pcs' => $item['qty_pcs'],
+                        'weight_kg' => $newItem->weight_kg,
+                        'moved_at' => now(),
+                    ]);
 
-                // Find item in current department
-                $sourceItem = \App\Models\ProductionItem::where('current_dept', $dept)
-                    ->where('code', $item['code'])
-                    ->where('heat_number', $item['heat_number'])
-                    ->first();
+                    $processedCount++;
+                } else {
+                    // OTHER DEPARTMENTS: Moves existing items forward
+                    $qtyHasil = (int) ($item['hasil'] ?? 0);
+                    $qtyRusak = (int) ($item['rusak'] ?? 0);
+                    $totalReported = $qtyHasil + $qtyRusak;
 
-                if (!$sourceItem) {
-                    $errors[] = "Item {$item['code']} #{$item['heat_number']} tidak ditemukan di departemen " . ucfirst($dept);
-                    continue;
+                    if ($totalReported <= 0)
+                        continue;
+
+                    // Find item in current department
+                    $sourceItem = \App\Models\ProductionItem::where('current_dept', $dept)
+                        ->where('code', $item['code'])
+                        ->where('heat_number', $item['heat_number'])
+                        ->first();
+
+                    if (!$sourceItem) {
+                        $errors[] = "Item {$item['code']} #{$item['heat_number']} tidak ditemukan di departemen " . ucfirst($dept);
+                        continue;
+                    }
+
+                    if ($totalReported > $sourceItem->qty_pcs) {
+                        $errors[] = "Item {$item['code']} #{$item['heat_number']} melebihi stok: reported $totalReported, available {$sourceItem->qty_pcs}";
+                        continue;
+                    }
+
+                    // SUCCESS: Proceed with Split/Move
+                    // 1. Create new item in Next Dept
+                    $nextItem = $sourceItem->replicate();
+                    $nextItem->current_dept = $nextDept;
+                    $nextItem->qty_pcs = $qtyHasil;
+                    $nextItem->scrap_qty = 0; // Reset scrap for next stage
+                    $nextItem->dept_entry_at = now();
+                    $nextItem->production_date = $productionDate;
+
+                    // Update weights if provided
+                    if (isset($item['bubut_weight']))
+                        $nextItem->bubut_weight = $item['bubut_weight'];
+                    if (isset($item['finish_weight']))
+                        $nextItem->finish_weight = $item['finish_weight'];
+                    if (isset($item['weight_kg']))
+                        $nextItem->weight_kg = $item['weight_kg'];
+
+                    $nextItem->save();
+
+                    // 2. Update Source Item
+                    $sourceItem->decrement('qty_pcs', $totalReported);
+                    $sourceItem->increment('scrap_qty', $qtyRusak);
+
+                    // Log History
+                    \App\Models\ProductionHistory::create([
+                        'item_id' => $sourceItem->id,
+                        'from_dept' => $dept,
+                        'to_dept' => $nextDept,
+                        'line_number' => $sourceItem->line_number,
+                        'qty_pcs' => $qtyHasil,
+                        'weight_kg' => $nextItem->weight_kg,
+                        'moved_at' => now(),
+                    ]);
+
+                    $processedCount++;
                 }
-
-                if ($totalReported > $sourceItem->qty_pcs) {
-                    $errors[] = "Item {$item['code']} #{$item['heat_number']} melebihi stok: reported $totalReported, available {$sourceItem->qty_pcs}";
-                    continue;
-                }
-
-                // SUCCESS: Proceed with Split/Move
-                // 1. Create new item in Next Dept
-                $nextItem = $sourceItem->replicate();
-                $nextItem->current_dept = $nextDept;
-                $nextItem->qty_pcs = $qtyHasil;
-                $nextItem->scrap_qty = 0; // Reset scrap for next stage
-                $nextItem->dept_entry_at = now();
-                $nextItem->production_date = $productionDate;
-
-                // Update weights if provided
-                if ($item['bubut_weight'])
-                    $nextItem->bubut_weight = $item['bubut_weight'];
-                if ($item['finish_weight'])
-                    $nextItem->finish_weight = $item['finish_weight'];
-                if ($item['weight_kg'])
-                    $nextItem->weight_kg = $item['weight_kg'];
-
-                $nextItem->save();
-
-                // 2. Update Source Item
-                $sourceItem->decrement('qty_pcs', $totalReported);
-                $sourceItem->increment('scrap_qty', $qtyRusak);
-
-                // Log History
-                \App\Models\ProductionHistory::create([
-                    'item_id' => $sourceItem->id,
-                    'from_dept' => $dept,
-                    'to_dept' => $nextDept,
-                    'line_number' => $sourceItem->line_number,
-                    'qty_pcs' => $qtyHasil,
-                    'weight_kg' => $nextItem->weight_kg,
-                    'moved_at' => now(),
-                ]);
-
-                $processedCount++;
             }
+        } catch (\Exception $e) {
+            \Log::error("Input production error: " . $e->getMessage());
+            $errors[] = "System Error: " . $e->getMessage();
         }
 
         return response()->json([

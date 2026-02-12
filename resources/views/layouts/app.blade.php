@@ -4,9 +4,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>FIFO Tracking - Production System</title>
     <script src="{{ asset('js/tailwindcss.js') }}"></script>
     <script src="{{ asset('js/axios.min.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            if (window.axios) {
+                window.axios.defaults.headers.common['X-CSRF-TOKEN'] = csrfToken;
+                window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+            }
+        });
+
+        function toggleInputMenu() {
+            const menu = document.getElementById('inputMenu');
+            const icon = document.getElementById('inputMenuIcon');
+            menu.classList.toggle('hidden');
+            icon.classList.toggle('rotate-90');
+        }
+    </script>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="{{ asset('css/all.min.css') }}">
     <!-- Handsontable -->
@@ -79,6 +96,14 @@
                         <i class="fas fa-chart-line w-6"></i> Dashboard
                     </a>
                 </li>
+
+                <li>
+                    <a href="{{ route('dashboard.defects') }}"
+                        class="flex items-center px-6 py-2 hover:bg-slate-800 {{ request()->routeIs('dashboard.defects') ? 'bg-blue-600 text-white border-l-4 border-red-400' : 'text-slate-300' }}">
+                        <i class="fas fa-chart-pie w-6"></i> Dashboard Kerusakan
+                    </a>
+                </li>
+
                 <li class="px-6 pt-4 pb-2 text-xs font-semibold text-slate-500 uppercase">Kanban</li>
 
                 <li>
@@ -95,18 +120,71 @@
                     </a>
                 </li>
 
-                <li class="px-6 pt-4 pb-2 text-xs font-semibold text-slate-500 uppercase">Input Departments</li>
+                <li>
+                    <button onclick="toggleInputMenu()"
+                        class="w-full flex items-center justify-between px-6 py-3 hover:bg-slate-800 transition-colors focus:outline-none group">
+                        <span class="text-xs font-semibold text-slate-500 uppercase group-hover:text-slate-300">Input
+                            Departments</span>
+                        <i id="inputMenuIcon"
+                            class="fas fa-chevron-right text-xs text-slate-500 transition-transform duration-200 {{ request()->is('input*') ? 'rotate-90' : '' }}"></i>
+                    </button>
+                    <ul id="inputMenu"
+                        class="{{ request()->is('input*') ? '' : 'hidden' }} space-y-1 bg-slate-800/30 pb-2">
+                        @php
+                            $deptIcons = [
+                                'cor' => 'fa-fire',
+                                'netto' => 'fa-cut',
+                                'bubut_od' => 'fa-sync-alt',
+                                'bubut_cnc' => 'fa-microchip',
+                                'bor' => 'fa-screwdriver',
+                                'finish' => 'fa-clipboard-check'
+                            ];
+                        @endphp
+                        @foreach($deptIcons as $dept => $icon)
+                            <li>
+                                <a href="{{ route('input.index', $dept) }}"
+                                    class="flex items-center pl-10 pr-6 py-2 hover:bg-slate-800 {{ request()->is('input/' . $dept) ? 'text-white font-medium border-l-2 border-blue-500' : 'text-slate-400' }}">
+                                    <i class="fas {{ $icon }} w-4 mr-2 text-xs opacity-70"></i>
+                                    <span class="text-sm">{{ ucfirst(str_replace('_', ' ', $dept)) }}</span>
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </li>
 
-                @foreach(['cor', 'netto', 'bubut_od', 'bubut_cnc', 'bor', 'finish'] as $dept)
-                    <li>
-                        <a href="{{ route('input.index', $dept) }}"
-                            class="flex items-center px-6 py-2 hover:bg-slate-800 {{ request()->is('input/' . $dept) ? 'bg-slate-800 text-white border-l-4 border-blue-500' : 'text-slate-300' }}">
-                            <i class="fas fa-file-import w-6"></i> Input {{ ucfirst(str_replace('_', ' ', $dept)) }}
-                        </a>
-                    </li>
-                @endforeach
+                <!-- Defect Input Section -->
+                <li>
+                    <button onclick="toggleDefectMenu()"
+                        class="w-full flex items-center justify-between px-6 py-3 hover:bg-slate-800 transition-colors focus:outline-none group">
+                        <span class="text-xs font-semibold text-slate-500 uppercase group-hover:text-slate-300">Input
+                            Kerusakan</span>
+                        <i id="defectMenuIcon"
+                            class="fas fa-chevron-right text-xs text-slate-500 transition-transform duration-200 {{ request()->is('defects*') ? 'rotate-90' : '' }}"></i>
+                    </button>
+                    <ul id="defectMenu"
+                        class="{{ request()->is('defects*') ? '' : 'hidden' }} space-y-1 bg-slate-800/30 pb-2">
+                        @foreach($deptIcons as $dept => $icon)
+                            @if($dept !== 'cor') {{-- Cor usually doesn't have defects entry in this flow --}}
+                                <li>
+                                    <a href="{{ route('defects.index', $dept) }}"
+                                        class="flex items-center pl-10 pr-6 py-2 hover:bg-slate-800 {{ request()->is('defects/' . $dept) ? 'text-white font-medium border-l-2 border-red-500' : 'text-slate-400' }}">
+                                        <i class="fas {{ $icon }} w-4 mr-2 text-xs opacity-70"></i>
+                                        <span class="text-sm">{{ ucfirst(str_replace('_', ' ', $dept)) }}</span>
+                                    </a>
+                                </li>
+                            @endif
+                        @endforeach
+                    </ul>
+                </li>
 
                 <li class="px-6 pt-4 pb-2 text-xs font-semibold text-slate-500 uppercase">System</li>
+
+                <li>
+                    <a href="{{ route('settings.defect-types.index') }}"
+                        class="flex items-center px-6 py-2 hover:bg-slate-800 {{ request()->routeIs('settings.defect-types.*') ? 'bg-blue-600 text-white border-l-4 border-blue-300' : 'text-slate-300' }}">
+                        <i class="fas fa-cog w-6"></i> Settings
+                    </a>
+                </li>
 
                 <li>
                     <a href="{{ route('report.index') }}"
@@ -114,6 +192,22 @@
                         <i class="fas fa-print w-6"></i> Report SPK
                     </a>
                 </li>
+
+                <li>
+                    <a href="{{ route('report-defects.index') }}"
+                        class="flex items-center px-6 py-2 hover:bg-slate-800 {{ request()->routeIs('report-defects.*') ? 'bg-blue-600 text-white border-l-4 border-red-300' : 'text-slate-300' }}">
+                        <i class="fas fa-file-invoice-dollar w-6"></i> Report Kerusakan
+                    </a>
+                </li>
+
+                <script>
+                    function toggleDefectMenu() {
+                        const menu = document.getElementById('defectMenu');
+                        const icon = document.getElementById('defectMenuIcon');
+                        menu.classList.toggle('hidden');
+                        icon.classList.toggle('rotate-90');
+                    }
+                </script>
             </ul>
         </nav>
 

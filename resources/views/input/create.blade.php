@@ -79,17 +79,29 @@
         // Define Columns based on Department
         let colHeaders, columns, schema;
 
+        const parseNum = (val) => {
+            if (val === null || val === undefined || val === '' || val === '-') return null;
+            if (typeof val === 'number') return val;
+            const clean = val.toString().replace(/[^-0.9.]/g, '');
+            const num = parseFloat(clean);
+            return isNaN(num) ? null : num;
+        };
+
         if (dept === 'cor') {
             colHeaders = ['Code', 'Heat No', 'Item Code', 'Item Name', 'AISI', 'Size', 'Bruto (KG)', 'Netto (KG)', 'Finish (KG)', 'Qty (PCS)', 'Line', 'Customer'];
             columns = [
                 { type: 'text' }, { type: 'text' }, { type: 'text' }, { type: 'text' },
-                { type: 'text' }, { type: 'text' }, { type: 'numeric' }, { type: 'numeric' },
-                { type: 'numeric' }, { type: 'numeric' }, { type: 'numeric' }, { type: 'text' }
+                { type: 'text' }, { type: 'text' }, { type: 'text' }, { type: 'text' },
+                { type: 'text' }, { type: 'numeric' }, { type: 'text' }, { type: 'text' }
             ];
             schema = (row) => ({
                 code: row[0], heat_number: row[1], item_code: row[2], item_name: row[3],
-                aisi: row[4], size: row[5], bruto_weight: row[6], netto_weight: row[7],
-                finish_weight: row[8], qty_pcs: row[9], weight_kg: row[7] || row[6] || 0,
+                aisi: row[4], size: row[5],
+                bruto_weight: parseNum(row[6]),
+                netto_weight: parseNum(row[7]),
+                finish_weight: parseNum(row[8]),
+                qty_pcs: parseInt(row[9]) || 0,
+                weight_kg: parseNum(row[8]) || parseNum(row[7]) || parseNum(row[6]) || 0,
                 line_number: row[10], customer: row[11]
             });
         } else {
@@ -97,23 +109,29 @@
             colHeaders = ['Code', 'Heat Number', 'Item Name', 'Finish Weight (KG)', 'Hasil (PCS)', 'Rusak (PCS)'];
             columns = [
                 { type: 'text' }, { type: 'text' }, { type: 'text' },
-                { type: 'numeric' }, { type: 'numeric' }, { type: 'numeric' }
+                { type: 'text' }, { type: 'numeric' }, { type: 'numeric' }
             ];
 
             if (dept === 'bubut_cnc') {
                 colHeaders.splice(3, 0, 'Bubut Weight (KG)');
-                columns.splice(3, 0, { type: 'numeric' });
+                columns.splice(3, 0, { type: 'text' });
                 schema = (row) => ({
                     code: row[0], heat_number: row[1], item_name: row[2],
-                    bubut_weight: row[3], finish_weight: row[4],
-                    hasil: row[5], rusak: row[6],
-                    qty_pcs: (parseInt(row[5]) || 0) + (parseInt(row[6]) || 0) // Total reporting
+                    bubut_weight: parseNum(row[3]),
+                    finish_weight: parseNum(row[4]),
+                    hasil: parseInt(row[5]) || 0,
+                    rusak: parseInt(row[6]) || 0,
+                    qty_pcs: (parseInt(row[5]) || 0) + (parseInt(row[6]) || 0),
+                    weight_kg: parseNum(row[4]) || parseNum(row[3]) || null
                 });
             } else {
                 schema = (row) => ({
                     code: row[0], heat_number: row[1], item_name: row[2],
-                    finish_weight: row[3], hasil: row[4], rusak: row[5],
-                    qty_pcs: (parseInt(row[4]) || 0) + (parseInt(row[5]) || 0)
+                    finish_weight: parseNum(row[3]),
+                    hasil: parseInt(row[4]) || 0,
+                    rusak: parseInt(row[5]) || 0,
+                    qty_pcs: (parseInt(row[4]) || 0) + (parseInt(row[5]) || 0),
+                    weight_kg: parseNum(row[3]) || null
                 });
             }
         }
@@ -201,7 +219,11 @@
                 .catch(err => {
                     Swal.close();
                     console.error(err);
-                    Swal.fire('Gagal', 'Terjadi kesalahan sistem. Periksa konsol.', 'error');
+                    let errMsg = 'Terjadi kesalahan sistem.';
+                    if (err.response && err.response.data && err.response.data.message) {
+                        errMsg = err.response.data.message;
+                    }
+                    Swal.fire('Gagal', errMsg, 'error');
                 });
         }
 
