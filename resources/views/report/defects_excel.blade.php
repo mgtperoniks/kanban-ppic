@@ -6,13 +6,15 @@
         </tr>
         <tr>
             <th colspan="5" style="text-align: center; font-size: 12pt; font-weight: bold;">DEPARTEMEN
-                {{ strtoupper(str_replace('_', ' ', $department)) }}</th>
+                {{ strtoupper(str_replace('_', ' ', $department)) }}
+            </th>
         </tr>
         <tr>
             <th colspan="5" style="text-align: center;">Tanggal: {{ date('d F Y', strtotime($date)) }}</th>
         </tr>
         <tr>
-            <th colspan="5" style="text-align: center; font-weight: bold;">JENIS: {{ strtoupper($defectType->name) }}
+            <th colspan="5" style="text-align: center; font-weight: bold;">JENIS:
+                {{ $defectType ? strtoupper($defectType->name) : 'SEMUA JENIS' }}
             </th>
         </tr>
         <tr></tr>
@@ -25,13 +27,14 @@
         </tr>
     </thead>
     <tbody>
-        @foreach($results as $index => $defect)
+        @foreach($results as $index => $item)
             <tr>
                 <td style="border: 1px solid #000000; text-align: center;">{{ $index + 1 }}</td>
-                <td style="border: 1px solid #000000; font-weight: bold;">{{ $defect->item->heat_number }}</td>
-                <td style="border: 1px solid #000000;">{{ $defect->item->item_name }}</td>
-                <td style="border: 1px solid #000000; text-align: center;">{{ $defect->qty }}</td>
-                <td style="border: 1px solid #000000; font-style: italic;">{{ $defect->notes ?? '-' }}</td>
+                <td style="border: 1px solid #000000; font-weight: bold;">{{ $item->heat_number }}</td>
+                <td style="border: 1px solid #000000;">{{ $item->item_name }}</td>
+                <td style="border: 1px solid #000000; text-align: center;">{{ $item->total_defect_qty }}</td>
+                <td style="border: 1px solid #000000; font-weight: bold;">{{ strtoupper($item->defect_summary) ?: '-' }}
+                </td>
             </tr>
         @endforeach
     </tbody>

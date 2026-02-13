@@ -36,7 +36,9 @@
         <div class="flex justify-between mb-6 text-sm font-medium">
             <div>
                 <p>Tanggal: <span class="font-normal">{{ date('d F Y', strtotime($date)) }}</span></p>
-                <p>Jenis Kerusakan: <span class="font-bold text-lg uppercase">{{ $defectType->name }}</span></p>
+                <p>Jenis Kerusakan: <span
+                        class="font-bold text-lg uppercase">{{ $defectType ? $defectType->name : 'SEMUA JENIS' }}</span>
+                </p>
             </div>
             <div class="text-right">
                 <p>No. Dokumen: DEF/{{ strtoupper(substr($department, 0, 3)) }}/{{ date('Ymd') }}</p>
@@ -56,13 +58,15 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($results as $index => $defect)
+                @foreach($results as $index => $item)
                     <tr>
                         <td class="border border-black px-2 py-1.5 text-center">{{ $index + 1 }}</td>
-                        <td class="border border-black px-2 py-1.5 font-bold">{{ $defect->item->heat_number }}</td>
-                        <td class="border border-black px-2 py-1.5">{{ $defect->item->item_name }}</td>
-                        <td class="border border-black px-2 py-1.5 text-center">{{ number_format($defect->qty) }}</td>
-                        <td class="border border-black px-2 py-1.5 text-xs italic">{{ $defect->notes ?? '-' }}</td>
+                        <td class="border border-black px-2 py-1.5 font-bold">{{ $item->heat_number }}</td>
+                        <td class="border border-black px-2 py-1.5">{{ $item->item_name }}</td>
+                        <td class="border border-black px-2 py-1.5 text-center">{{ number_format($item->total_defect_qty) }}
+                        </td>
+                        <td class="border border-black px-2 py-1.5 text-xs font-bold uppercase">
+                            {{ $item->defect_summary ?: '-' }}</td>
                     </tr>
                 @endforeach
             </tbody>

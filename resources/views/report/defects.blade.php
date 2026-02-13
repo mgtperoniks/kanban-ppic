@@ -15,7 +15,6 @@
             <form action="{{ route('report-defects.index') }}" method="GET" id="reportForm"
                 class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                 <!-- Parameters -->
-                <input type="hidden" name="generate" value="1">
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
@@ -56,7 +55,7 @@
                 </div>
 
                 <div>
-                    <button type="submit"
+                    <button type="submit" name="generate" value="1"
                         class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow transition-colors flex items-center justify-center gap-2">
                         <i class="fas fa-search"></i> Generate
                     </button>
@@ -72,8 +71,8 @@
                         <h2 class="text-xl font-bold text-gray-900 uppercase">LAPORAN KERUSAKAN PRODUKSI</h2>
                         <h3 class="text-lg text-gray-600">DEPARTEMEN {{ strtoupper(str_replace('_', ' ', $selectedDept)) }}</h3>
                         <p class="text-sm text-gray-500 mt-1">Tanggal: {{ date('d F Y', strtotime($selectedDate)) }}</p>
-                        <p class="text-red-700 font-bold mt-2">JENIS:
-                            {{ $defectTypes->firstWhere('id', $selectedDefectType)->name ?? '-' }}
+                        <p class="text-red-700 font-bold mt-2 text-lg uppercase">JENIS:
+                            {{ $defectType ? $defectType->name : 'SEMUA JENIS' }}
                         </p>
                     </div>
                     <div class="flex gap-2">
@@ -100,15 +99,17 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @forelse($results as $index => $defect)
+                            @forelse($results as $index => $item)
                                 <tr>
                                     <td class="border border-gray-300 px-3 py-2 text-center">{{ $index + 1 }}</td>
                                     <td class="border border-gray-300 px-3 py-2 font-mono font-bold">
-                                        {{ $defect->item->heat_number }}
+                                        {{ $item->heat_number }}
                                     </td>
-                                    <td class="border border-gray-300 px-3 py-2">{{ $defect->item->item_name }}</td>
-                                    <td class="border border-gray-300 px-3 py-2 text-center">{{ number_format($defect->qty) }}</td>
-                                    <td class="border border-gray-300 px-3 py-2 text-gray-500 italic">{{ $defect->notes ?? '-' }}
+                                    <td class="border border-gray-300 px-3 py-2">{{ $item->item_name }}</td>
+                                    <td class="border border-gray-300 px-3 py-2 text-center">
+                                        {{ number_format($item->total_defect_qty) }}</td>
+                                    <td class="border border-gray-300 px-3 py-2 text-red-600 font-medium">
+                                        {{ $item->defect_summary ?: '-' }}
                                     </td>
                                 </tr>
                             @empty
