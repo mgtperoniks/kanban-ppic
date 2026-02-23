@@ -72,3 +72,12 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/wip/update', [WipController::class, 'update'])->name('wip.update');
     Route::get('/report/wip', [WipController::class, 'report'])->name('wip.report');
 });
+
+Route::get('/debug-session', function () {
+    return [
+        'id' => session()->getId(),
+        'all' => session()->all(),
+        'auth' => auth()->check(),
+        'user' => auth()->user(),
+    ];
+});
