@@ -14,16 +14,31 @@ class PlanController extends Controller
 
         if ($date) {
             // Detail View for a specific date
-            $plans = ProductionPlan::whereDate('created_at', $date)
-                ->orderBy('line_number', 'asc')
-                ->orderBy('id', 'asc')
-                ->get();
-            return view('plan.list', compact('plans', 'date'));
+            $sort = $request->query('sort');
+            $direction = $request->query('direction', 'asc');
+
+            $query = ProductionPlan::whereDate('created_at', $date);
+
+            if ($sort) {
+                if ($sort === 'hasil_cor') {
+                    $query->orderByRaw('(qty_planned - qty_remaining) ' . $direction);
+                } else {
+                    $query->orderBy($sort, $direction);
+                }
+                $query->orderBy('id', 'asc'); // secondary sort for stability
+            } else {
+                $query->orderBy('line_number', 'asc')->orderBy('id', 'asc');
+            }
+
+            $plans = $query->get();
+            $planTitle = ProductionPlan::whereDate('created_at', $date)->whereNotNull('title')->value('title');
+            return view('plan.list', compact('plans', 'date', 'planTitle', 'sort', 'direction'));
         }
 
         // Summary View (Default)
         $dailyStats = ProductionPlan::selectRaw('
                 DATE(created_at) as date, 
+                MAX(title) as title,
                 COUNT(*) as items_count, 
                 SUM(qty_planned) as total_planned, 
                 SUM(qty_remaining) as total_remaining,
@@ -49,6 +64,7 @@ class PlanController extends Controller
     {
         $data = $request->validate([
             'date' => 'nullable|date',
+            'title' => 'required|string|max:255',
             'plans' => 'required|array',
             'plans.*.code' => 'nullable|string',
             'plans.*.item_code' => 'required|string',
@@ -63,6 +79,7 @@ class PlanController extends Controller
         ]);
 
         $customDate = $data['date'] ?? null;
+        $customTitle = $data['title'] ?? null;
 
         $skippedCount = 0;
         foreach ($data['plans'] as $plan) {
@@ -84,6 +101,7 @@ class PlanController extends Controller
 
             $newPlan = [
                 'code' => $code,
+                'title' => $customTitle,
                 'item_code' => $itemCode,
                 'item_name' => $plan['item_name'],
                 'aisi' => $plan['aisi'] ?? null,
@@ -102,7 +120,39 @@ class PlanController extends Controller
                 $newPlan['updated_at'] = $customDate . ' ' . now()->format('H:i:s');
             }
 
-            ProductionPlan::create($newPlan);
+            $createdPlan = ProductionPlan::create($newPlan);
+
+            // Auto-detect and link any existing unassigned "Cor" items
+            $query = \App\Models\ProductionItem::whereNull('plan_id')
+                ->where('item_code', $itemCode);
+
+            if ($lineNumber !== null) {
+                $query->where('line_number', $lineNumber);
+            }
+
+            $unassignedItems = $query->orderBy('created_at', 'asc')->get();
+
+            foreach ($unassignedItems as $item) {
+                // Only fill until plan is satisfied
+                if ($createdPlan->qty_remaining <= 0)
+                    break;
+
+                // Map to plan and enrich metadata
+                /** @var \App\Models\ProductionItem $item */
+                $item->update([
+                    'plan_id' => $createdPlan->id,
+                    'po_number' => $item->po_number ?? $createdPlan->po_number,
+                    'customer' => $item->customer ?? $createdPlan->customer,
+                ]);
+
+                // Reduce remaining allocation on the plan
+                $createdPlan->decrement('qty_remaining', $item->qty_pcs);
+            }
+
+            // Ensure plan status accurately reflects early completions
+            if ($createdPlan->qty_remaining <= 0) {
+                $createdPlan->update(['status' => 'completed']);
+            }
         }
 
         $processedCount = count($data['plans']) - $skippedCount;
@@ -160,5 +210,18 @@ class PlanController extends Controller
         $plan->delete();
 
         return back()->with('success', 'Rencana berhasil dihapus.');
+    }
+
+    public function updateTitle(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date',
+            'title' => 'required|string|max:255'
+        ]);
+
+        ProductionPlan::whereDate('created_at', $request->date)
+            ->update(['title' => $request->title]);
+
+        return back()->with('success', 'Judul Rencana berhasil diperbarui.');
     }
 }

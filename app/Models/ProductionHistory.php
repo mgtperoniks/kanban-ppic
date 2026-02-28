@@ -12,6 +12,7 @@ class ProductionHistory extends Model
         'to_dept',
         'line_number',
         'qty_pcs',
+        'scrap_qty',
         'weight_kg',
         'moved_at',
         'remarks',

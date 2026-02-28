@@ -6,8 +6,68 @@ use Illuminate\Http\Request;
 
 class InputController extends Controller
 {
-    public function index($dept)
+    public function index(Request $request, $dept)
     {
+        $search = $request->input('search');
+        $searchResults = collect();
+
+        if ($search) {
+            $rawResults = \App\Models\ProductionItem::with('histories')
+                ->where(function ($q) use ($search) {
+                    $q->where('code', 'like', "%{$search}%")
+                        ->orWhere('item_code', 'like', "%{$search}%")
+                        ->orWhere('item_name', 'like', "%{$search}%")
+                        ->orWhere('heat_number', 'like', "%{$search}%");
+                })
+                ->orderBy('created_at', 'desc')
+                ->take(100)
+                ->get();
+
+            // Group by code and heat_number to combine histories from different departments
+            $grouped = [];
+            foreach ($rawResults as $item) {
+                $key = $item->code . '|' . $item->heat_number;
+                if (!isset($grouped[$key])) {
+                    // Start with the most advanced state item as the base
+                    $grouped[$key] = $item;
+                    $grouped[$key]->all_histories = collect();
+                } else {
+                    // If we find an item with a more advanced department, update the base item info
+                    // This can be complex depending on flow, but simpler is just taking the one with the latest update
+                    if ($item->updated_at > $grouped[$key]->updated_at) {
+                        $tempHistories = $grouped[$key]->all_histories;
+                        $grouped[$key] = $item;
+                        $grouped[$key]->all_histories = $tempHistories;
+                    }
+                }
+
+                // Merge histories from ALL items that share the same code and heat number
+                $allItemIds = \App\Models\ProductionItem::where('code', $item->code)
+                    ->where('heat_number', $item->heat_number)
+                    ->pluck('id');
+
+                $allHistories = \App\Models\ProductionHistory::whereIn('item_id', $allItemIds)
+                    ->orderBy('moved_at', 'asc')
+                    ->get();
+
+                // Add to our group
+                $grouped[$key]->all_histories = collect();
+
+                foreach ($allHistories as $history) {
+                    // Avoid duplicating history entries if they were somehow loaded multiple times
+                    if (!$grouped[$key]->all_histories->contains('id', $history->id)) {
+                        // attach the item for production_date reference
+                        $history_item = \App\Models\ProductionItem::find($history->item_id);
+                        $history->setRelation('item', $history_item);
+
+                        $grouped[$key]->all_histories->push($history);
+                    }
+                }
+            }
+
+            $searchResults = collect(array_values($grouped));
+        }
+
         // Source from history TO see what was DONE in this department
         $dailyStats = \App\Models\ProductionHistory::where('from_dept', $dept)
             ->join('production_items', 'production_histories.item_id', '=', 'production_items.id')
@@ -16,7 +76,7 @@ class InputController extends Controller
             ->orderByDesc('date')
             ->get();
 
-        return view('input.index', compact('dept', 'dailyStats'));
+        return view('input.index', compact('dept', 'dailyStats', 'search', 'searchResults'));
     }
 
     public function create($dept)
@@ -80,7 +140,103 @@ class InputController extends Controller
         $processedCount = 0;
         $errors = [];
 
+        // PRE-VALIDATION PHASE
+        if ($dept === 'cor') {
+            $groupedCor = [];
+            foreach ($data['items'] as $index => $item) {
+                if (empty($item['qty_pcs']))
+                    continue;
+
+                $code = $item['code'] ?? '';
+                $heat = $item['heat_number'] ?? '';
+                if (empty($code) || empty($heat)) {
+                    $errors[] = "Baris " . ($index + 1) . ": Code dan Heat Number wajib diisi.";
+                    continue;
+                }
+
+                $key = $code . '|' . $heat;
+                if (isset($groupedCor[$key])) {
+                    $errors[] = "Baris " . ($index + 1) . ": Duplikasi Code {$code} dan Heat {$heat} dalam satu kali simpan.";
+                } else {
+                    $groupedCor[$key] = true;
+                    // Check DB if already exists in cor (to enforce unique code+heat overall)
+                    $exists = \App\Models\ProductionItem::where('code', $code)
+                        ->where('heat_number', $heat)
+                        ->exists();
+                    if ($exists) {
+                        $errors[] = "Item {$code} #{$heat} sudah pernah di-input di Cor (kombinasi ini harus unik).";
+                    }
+                }
+            }
+        } else {
+            $groupedItems = [];
+            foreach ($data['items'] as $index => $item) {
+                $qtyHasil = (int) ($item['hasil'] ?? 0);
+                $qtyRusak = (int) ($item['rusak'] ?? 0);
+                $totalReported = $qtyHasil + $qtyRusak;
+
+                if ($totalReported <= 0)
+                    continue;
+
+                $code = $item['code'] ?? '';
+                $heat = $item['heat_number'] ?? '';
+
+                if (empty($code) || empty($heat)) {
+                    $errors[] = "Baris " . ($index + 1) . ": Code dan Heat Number wajib diisi.";
+                    continue;
+                }
+
+                $key = $code . '|' . $heat;
+                if (!isset($groupedItems[$key])) {
+                    $groupedItems[$key] = [
+                        'code' => $code,
+                        'heat_number' => $heat,
+                        'total_reported' => 0,
+                        'rows' => []
+                    ];
+                }
+
+                $groupedItems[$key]['total_reported'] += $totalReported;
+                $groupedItems[$key]['rows'][] = $index + 1;
+            }
+
+            foreach ($groupedItems as $key => $group) {
+                // Sum qty_pcs because theoretically there could be multiple splits? But code+heat is unique, so first() is fine, but sum is safer
+                $sourceItem = \App\Models\ProductionItem::where('current_dept', $dept)
+                    ->where('code', $group['code'])
+                    ->where('heat_number', $group['heat_number'])
+                    ->first();
+
+                if (!$sourceItem) {
+                    $everExisted = \App\Models\ProductionItem::where('code', $group['code'])
+                        ->where('heat_number', $group['heat_number'])
+                        ->exists();
+
+                    if ($everExisted) {
+                        $errors[] = "Item {$group['code']} #{$group['heat_number']} tidak memiliki stok di " . ucfirst($dept) . " (sudah habis atau dipindah).";
+                    } else {
+                        $errors[] = "Item {$group['code']} #{$group['heat_number']} ilegal: Belum pernah diproses di Cor.";
+                    }
+                } else {
+                    if ($group['total_reported'] > $sourceItem->qty_pcs) {
+                        $errors[] = "Item {$group['code']} #{$group['heat_number']} melebihi stok: total input {$group['total_reported']} pcs, tersedia {$sourceItem->qty_pcs} pcs di " . ucfirst($dept) . ".";
+                    }
+                }
+            }
+        }
+
+        if (count($errors) > 0) {
+            return response()->json([
+                'success' => false,
+                'processed' => 0,
+                'errors' => $errors,
+                'message' => "Gagal menyimpan karena ada data yang tidak valid. Periksa daftar error.",
+            ]);
+        }
+
         try {
+            \Illuminate\Support\Facades\DB::beginTransaction();
+
             foreach ($data['items'] as $item) {
                 $lineNumber = null;
                 if (isset($item['line_number'])) {
@@ -88,6 +244,9 @@ class InputController extends Controller
                 }
 
                 if ($dept === 'cor') {
+                    if (empty($item['qty_pcs']))
+                        continue;
+
                     $plan = \App\Models\ProductionPlan::where('item_code', $item['item_code'])
                         ->where('line_number', $lineNumber)
                         ->where('qty_remaining', '>', 0)
@@ -145,15 +304,9 @@ class InputController extends Controller
                         ->where('heat_number', $item['heat_number'])
                         ->first();
 
-                    if (!$sourceItem) {
-                        $errors[] = "Item {$item['code']} #{$item['heat_number']} tidak ditemukan di departemen " . ucfirst($dept);
+                    // Validation already ensured this is safe
+                    if (!$sourceItem || $totalReported > $sourceItem->qty_pcs)
                         continue;
-                    }
-
-                    if ($totalReported > $sourceItem->qty_pcs) {
-                        $errors[] = "Item {$item['code']} #{$item['heat_number']} melebihi stok: reported $totalReported, available {$sourceItem->qty_pcs}";
-                        continue;
-                    }
 
                     $nextItem = $sourceItem->replicate();
                     $nextItem->current_dept = $nextDept;
@@ -180,6 +333,7 @@ class InputController extends Controller
                         'to_dept' => $nextDept,
                         'line_number' => $sourceItem->line_number,
                         'qty_pcs' => $qtyHasil,
+                        'scrap_qty' => $qtyRusak,
                         'weight_kg' => $nextItem->weight_kg,
                         'moved_at' => now(),
                     ]);
@@ -187,8 +341,11 @@ class InputController extends Controller
                     $processedCount++;
                 }
             }
+
+            \Illuminate\Support\Facades\DB::commit();
         } catch (\Exception $e) {
-            \Log::error("Input production error: " . $e->getMessage());
+            \Illuminate\Support\Facades\DB::rollBack();
+            \Illuminate\Support\Facades\Log::error("Input production error: " . $e->getMessage());
             $errors[] = "System Error: " . $e->getMessage();
         }
 
@@ -265,6 +422,16 @@ class InputController extends Controller
         $item = $history->item;
 
         if ($item) {
+            // Safety check: Prevent deletion if the item has already been moved to the next department
+            if ($history->from_dept !== 'cor') {
+                if ($item->qty_pcs < $history->qty_pcs || $item->current_dept !== $history->to_dept) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Gagal menghapus: Item ini sudah diproses ke departemen selanjutnya.'
+                    ], 400);
+                }
+            }
+
             // 1. If Cor, revert plan
             if ($history->from_dept === 'cor' && $item->plan_id) {
                 $plan = \App\Models\ProductionPlan::find($item->plan_id);
@@ -273,9 +440,27 @@ class InputController extends Controller
                     $plan->update(['status' => 'active']);
                 }
             } else {
-                // Revert qty to previous item if it was a movement
-                // This is complex because we replicate items. 
-                // For simplicity, we just delete the "next" item created by this history.
+                // Revert qty to source item if it was a movement
+                $sourceItem = \App\Models\ProductionItem::where('current_dept', $history->from_dept)
+                    ->where('code', $item->code)
+                    ->where('heat_number', $item->heat_number)
+                    ->first();
+
+                if ($sourceItem) {
+                    $sourceItem->increment('qty_pcs', $history->qty_pcs);
+
+                    if ($history->scrap_qty > 0) {
+                        // Prevent negative scrap_qty just in case
+                        $newScrapQty = max(0, $sourceItem->scrap_qty - $history->scrap_qty);
+                        $sourceItem->update(['scrap_qty' => $newScrapQty]);
+
+                        // Cleanup excessive defects if any
+                        $defectCount = $sourceItem->defects()->sum('qty');
+                        if ($defectCount > $newScrapQty) {
+                            $sourceItem->defects()->delete(); // Reset all defects to avoid orphan/over-reported details
+                        }
+                    }
+                }
             }
 
             // 2. Delete the item created/moved by this history
@@ -285,6 +470,6 @@ class InputController extends Controller
         // 3. Delete the history record
         $history->delete();
 
-        return response()->json(['success' => true, 'message' => 'Data berhasil dihapus.']);
+        return response()->json(['success' => true, 'message' => 'Data berhasil dihapus dan jumlah stok dikembalikan.']);
     }
 }

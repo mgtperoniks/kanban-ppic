@@ -26,6 +26,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/plan', [PlanController::class, 'index'])->name('plan.index');
     Route::get('/plan/create', [PlanController::class, 'create'])->name('plan.create');
     Route::post('/plan', [PlanController::class, 'store'])->name('plan.store');
+    Route::post('/plan/update-title', [PlanController::class, 'updateTitle'])->name('plan.updateTitle');
     Route::get('/plan/{plan}/edit', [PlanController::class, 'edit'])->name('plan.edit');
     Route::put('/plan/{plan}', [PlanController::class, 'update'])->name('plan.update');
     Route::delete('/plan/{plan}', [PlanController::class, 'destroy'])->name('plan.destroy');

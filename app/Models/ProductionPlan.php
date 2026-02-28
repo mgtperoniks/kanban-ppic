@@ -8,6 +8,7 @@ class ProductionPlan extends Model
 {
     protected $fillable = [
         'code',
+        'title',
         'item_code',
         'item_name',
         'aisi',

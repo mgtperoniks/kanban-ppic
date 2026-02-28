@@ -8,7 +8,7 @@
     <script src="{{ asset('js/tailwindcss.js') }}"></script>
     <link rel="stylesheet" href="{{ asset('css/all.min.css') }}">
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ asset('css/fonts.css') }}">
     <style>
         body {
             font-family: 'Inter', sans-serif;

@@ -51,6 +51,11 @@ class ProductionItem extends Model
         return $this->hasMany(ProductionDefect::class, 'production_item_id');
     }
 
+    public function histories()
+    {
+        return $this->hasMany(ProductionHistory::class, 'item_id');
+    }
+
     public function getAgingDaysAttribute()
     {
         $baseDate = $this->production_date ?? $this->dept_entry_at;

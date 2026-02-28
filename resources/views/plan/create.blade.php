@@ -8,10 +8,18 @@
                     <h1 class="text-xl font-bold text-gray-800">Rencana Cor (Input PPIC)</h1>
                     <p class="text-sm text-gray-500">Masukkan data P.O. dari Customer untuk antrian Cor.</p>
                 </div>
-                <div class="bg-slate-100 p-2 rounded flex items-center gap-2 border border-slate-200">
-                    <label class="text-xs font-bold text-slate-600 uppercase">Tanggal Rencana:</label>
-                    <input type="date" id="planDate" value="{{ date('Y-m-d') }}"
-                        class="text-sm border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500">
+                <div class="bg-slate-100 p-2 rounded flex items-center gap-4 border border-slate-200">
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs font-bold text-slate-600 uppercase">Judul Rencana <span class="text-red-500">*</span>:</label>
+                        <input type="text" id="planTitle" placeholder="Misal: Pengecoran Lokal" required
+                            class="text-sm border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500 w-48">
+                    </div>
+                    <div class="hidden sm:block h-6 w-px bg-slate-300"></div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs font-bold text-slate-600 uppercase">Tanggal:</label>
+                        <input type="date" id="planDate" value="{{ date('Y-m-d') }}"
+                            class="text-sm border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500 w-36">
+                    </div>
                 </div>
             </div>
             <button onclick="savePlans()" id="saveBtn"
@@ -73,8 +81,15 @@
         function savePlans() {
             const saveBtn = document.getElementById('saveBtn');
             const planDate = document.getElementById('planDate').value;
+            const planTitle = document.getElementById('planTitle').value;
             const rawData = hot.getData();
             const plans = [];
+
+            if (!planTitle || planTitle.trim() === '') {
+                alert('Judul Rencana harus diisi!');
+                document.getElementById('planTitle').focus();
+                return;
+            }
 
             rawData.forEach(row => {
                 // Check if Item Code, Item Name, PO, Qty, and Line are filled
@@ -105,7 +120,8 @@
 
             axios.post('{{ route('plan.store') }}', {
                 plans: plans,
-                date: planDate
+                date: planDate,
+                title: planTitle
             })
                 .then(res => {
                     alert(res.data.message);

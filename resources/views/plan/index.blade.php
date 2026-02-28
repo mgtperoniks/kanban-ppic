@@ -32,13 +32,18 @@
                     class="bg-white rounded-lg shadow p-4 border-l-4 border-{{ $agingColor }}-500 hover:shadow-md transition-shadow">
                     <a href="{{ route('plan.index', ['date' => $stat->date]) }}" class="block">
                         <div class="flex justify-between items-center">
-                            <div>
+                            <div class="flex-1 pr-4">
                                 <div class="text-lg font-bold text-gray-800 flex items-center gap-2">
-                                    <i class="far fa-calendar-alt text-gray-400"></i>
-                                    {{ \Carbon\Carbon::parse($stat->date)->isoFormat('dddd, D MMMM Y') }}
+                                    @if($stat->title)
+                                        <i class="fas fa-tags text-blue-500 opacity-80"></i>
+                                        {{ $stat->title }}
+                                    @else
+                                        <i class="far fa-calendar-alt text-gray-400"></i>
+                                        {{ \Carbon\Carbon::parse($stat->date)->isoFormat('dddd, D MMMM Y') }}
+                                    @endif
                                     @if($agingDays > 0)
                                         <span
-                                            class="text-[10px] bg-{{ $agingColor }}-100 text-{{ $agingColor }}-700 px-2 py-0.5 rounded-full font-bold uppercase border border-{{ $agingColor }}-200">
+                                            class="text-[10px] bg-{{ $agingColor }}-100 text-{{ $agingColor }}-700 px-2 py-0.5 rounded-full font-bold uppercase border border-{{ $agingColor }}-200 ml-2">
                                             {{ $agingDays }} Hari
                                         </span>
                                     @endif
@@ -49,7 +54,7 @@
                                     <span><i class="fas fa-hourglass-half text-orange-500 w-4"></i> Sisa:
                                         {{ number_format($stat->total_remaining) }} pcs</span>
                                 </div>
-                                <div class="mt-2 text-xs flex items-center gap-4">
+                                <div class="mt-2 text-xs flex items-center flex-wrap gap-4">
                                     <div
                                         class="text-blue-800 font-medium flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 w-fit">
                                         <i class="fas fa-user-tie opacity-70"></i>
@@ -59,6 +64,12 @@
                                         <i class="fas fa-layer-group text-gray-300"></i> {{ $stat->items_count }} item dalam
                                         antrian
                                     </div>
+                                    @if($stat->title)
+                                        <div class="text-gray-400 text-[11px] font-medium flex items-center gap-1">
+                                            <i class="far fa-calendar-alt opacity-70"></i>
+                                            {{ \Carbon\Carbon::parse($stat->date)->isoFormat('dddd, D MMMM Y') }}
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
                             <div class="flex items-center gap-4">
