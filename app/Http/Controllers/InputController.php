@@ -232,7 +232,8 @@ class InputController extends Controller
                         ->exists();
 
                     $rowNumbers = implode(', ', array_map(function ($idx) {
-                        return $idx + 1; }, $group['rows']));
+                        return $idx + 1;
+                    }, $group['rows']));
                     if ($everExisted) {
                         $errors[] = "Baris {$rowNumbers}: Item {$group['code']} #{$group['heat_number']} tidak memiliki stok di " . ucfirst($dept) . " (sudah habis atau dipindah).";
                     } else {
@@ -242,7 +243,8 @@ class InputController extends Controller
                 } else {
                     if ($group['total_reported'] > $sourceItem->qty_pcs) {
                         $rowNumbers = implode(', ', array_map(function ($idx) {
-                            return $idx + 1; }, $group['rows']));
+                            return $idx + 1;
+                        }, $group['rows']));
                         $errors[] = "Baris {$rowNumbers}: Item {$group['code']} #{$group['heat_number']} melebihi stok: total input {$group['total_reported']} pcs, tersedia {$sourceItem->qty_pcs} pcs di " . ucfirst($dept) . ".";
                         $isValidGroup = false;
                     }
@@ -409,6 +411,15 @@ class InputController extends Controller
 
     public function updateHistory(Request $request, \App\Models\ProductionHistory $history)
     {
+        $input = $request->all();
+        // Normalize decimals from comma to dot if passed as string
+        foreach (['weight_kg', 'bruto_weight', 'netto_weight'] as $field) {
+            if (isset($input[$field]) && is_string($input[$field])) {
+                $input[$field] = str_replace(',', '.', $input[$field]);
+                $request->merge([$field => $input[$field]]);
+            }
+        }
+
         $data = $request->validate([
             'qty_pcs' => 'required|integer|min:1',
             'weight_kg' => 'required|numeric|min:0',
@@ -418,15 +429,12 @@ class InputController extends Controller
         ]);
 
         $diffQty = $data['qty_pcs'] - $history->qty_pcs;
-        $diffWeight = $data['weight_kg'] - $history->weight_kg;
-
-        // 1. Update the associated item
         $item = $history->item;
+
         if ($item) {
             $item->qty_pcs += $diffQty;
-            $item->weight_kg = $data['weight_kg']; // Update to new weight
 
-            // Sync weights based on department if needed
+            // Sync weights based on department
             if ($history->from_dept === 'cor')
                 $item->weight_kg = $data['weight_kg'];
             if ($history->from_dept === 'netto')
@@ -435,6 +443,17 @@ class InputController extends Controller
                 $item->bubut_weight = $data['weight_kg'];
             if ($history->from_dept === 'finish')
                 $item->finish_weight = $data['weight_kg'];
+
+            // Also update generic weight_kg for consistency across WIP views
+            $item->weight_kg = $data['weight_kg'];
+
+            if (isset($data['bruto_weight']))
+                $item->bruto_weight = $data['bruto_weight'];
+            if (isset($data['netto_weight']))
+                $item->netto_weight = $data['netto_weight'];
+
+            if (isset($data['customer']))
+                $item->customer = $data['customer'];
 
             $item->save();
         }
@@ -454,16 +473,7 @@ class InputController extends Controller
             'weight_kg' => $data['weight_kg'],
         ]);
 
-        // 4. Update item metadata
-        if ($item) {
-            $item->update([
-                'bruto_weight' => $data['bruto_weight'],
-                'netto_weight' => $data['netto_weight'],
-                'customer' => $data['customer'],
-            ]);
-        }
-
-        return response()->json(['success' => true, 'message' => 'Data berhasil diperbarui.']);
+        return response()->json(['success' => true]);
     }
 
     public function destroyHistory(\App\Models\ProductionHistory $history)

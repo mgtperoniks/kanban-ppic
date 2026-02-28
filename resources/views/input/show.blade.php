@@ -166,6 +166,14 @@
             document.getElementById(modalId).classList.remove('flex');
         }
 
+        const normalizeDecimal = (val) => {
+            if (!val) return 0;
+            let str = val.toString().trim();
+            if (str.includes(',') && !str.includes('.')) str = str.replace(',', '.');
+            else if (str.includes(',') && str.includes('.')) str = str.replace(/,/g, '');
+            return parseFloat(str) || 0;
+        };
+
         document.getElementById('editForm').onsubmit = async (e) => {
             e.preventDefault();
             const id = document.getElementById('edit_history_id').value;
@@ -177,9 +185,9 @@
                 },
                 body: JSON.stringify({
                     qty_pcs: document.getElementById('edit_qty').value,
-                    weight_kg: document.getElementById('edit_weight').value,
-                    bruto_weight: document.getElementById('edit_bruto').value,
-                    netto_weight: document.getElementById('edit_netto').value,
+                    weight_kg: normalizeDecimal(document.getElementById('edit_weight').value),
+                    bruto_weight: normalizeDecimal(document.getElementById('edit_bruto').value),
+                    netto_weight: normalizeDecimal(document.getElementById('edit_netto').value),
                     customer: document.getElementById('edit_customer').value
                 })
             });
