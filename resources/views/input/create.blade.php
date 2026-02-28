@@ -178,10 +178,12 @@
             const rawData = hot.getData();
             const items = [];
 
-            rawData.forEach(row => {
+            rawData.forEach((row, index) => {
                 // Minimum validation: Code + Heat or Item Code
                 if (row[0] && row[1]) {
-                    items.push(schema(row));
+                    const itemData = schema(row);
+                    itemData.grid_row_index = index;
+                    items.push(itemData);
                 }
             });
 
@@ -202,7 +204,7 @@
             })
                 .then(res => {
                     Swal.close();
-                    if (res.data.success) {
+                    if (res.data.success && !res.data.partial) {
                         Swal.fire({
                             title: 'Berhasil!',
                             text: res.data.message,
@@ -210,8 +212,10 @@
                             timer: 2000,
                             showConfirmButton: false
                         }).then(() => {
-                            window.location.href = res.data.redirect;
+                            if (res.data.redirect) window.location.href = res.data.redirect;
                         });
+                    } else if (res.data.partial) {
+                        handlePartialSuccess(res.data);
                     } else {
                         handleErrors(res.data.errors, res.data.message);
                     }
@@ -225,6 +229,19 @@
                     }
                     Swal.fire('Gagal', errMsg, 'error');
                 });
+        }
+
+        function handlePartialSuccess(data) {
+            if (data.success_rows && data.success_rows.length > 0) {
+                hot.batch(() => {
+                    data.success_rows.forEach(rowIndex => {
+                        for (let col = 0; col < hot.countCols(); col++) {
+                            hot.setDataAtCell(rowIndex, col, null, 'serverChange');
+                        }
+                    });
+                });
+            }
+            handleErrors(data.errors, data.message);
         }
 
         function handleErrors(errors, message) {
@@ -241,7 +258,7 @@
             });
 
             Swal.fire({
-                title: 'Beberapa Data Gagal',
+                title: 'Perhatian!',
                 text: message,
                 icon: 'warning',
                 confirmButtonText: 'Tinjau Kesalahan'

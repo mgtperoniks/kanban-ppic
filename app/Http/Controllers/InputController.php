@@ -130,6 +130,7 @@ class InputController extends Controller
             'items.*.po_number' => 'nullable|string',
             'items.*.customer' => 'nullable|string',
             'items.*.line_number' => 'nullable',
+            'items.*.grid_row_index' => 'nullable|integer',
         ]);
 
         $productionDate = $data['production_date'];
@@ -139,6 +140,8 @@ class InputController extends Controller
 
         $processedCount = 0;
         $errors = [];
+        $validItems = [];
+        $failedRows = [];
 
         // PRE-VALIDATION PHASE
         if ($dept === 'cor') {
@@ -147,16 +150,21 @@ class InputController extends Controller
                 if (empty($item['qty_pcs']))
                     continue;
 
+                $gridIndex = $item['grid_row_index'] ?? $index;
+                $rowLabel = "Baris " . ($gridIndex + 1);
+
                 $code = $item['code'] ?? '';
                 $heat = $item['heat_number'] ?? '';
                 if (empty($code) || empty($heat)) {
-                    $errors[] = "Baris " . ($index + 1) . ": Code dan Heat Number wajib diisi.";
+                    $errors[] = "{$rowLabel}: Code dan Heat Number wajib diisi.";
+                    $failedRows[] = $gridIndex;
                     continue;
                 }
 
                 $key = $code . '|' . $heat;
                 if (isset($groupedCor[$key])) {
-                    $errors[] = "Baris " . ($index + 1) . ": Duplikasi Code {$code} dan Heat {$heat} dalam satu kali simpan.";
+                    $errors[] = "{$rowLabel}: Duplikasi Code {$code} dan Heat {$heat} dalam satu kali simpan.";
+                    $failedRows[] = $gridIndex;
                 } else {
                     $groupedCor[$key] = true;
                     // Check DB if already exists in cor (to enforce unique code+heat overall)
@@ -164,7 +172,10 @@ class InputController extends Controller
                         ->where('heat_number', $heat)
                         ->exists();
                     if ($exists) {
-                        $errors[] = "Item {$code} #{$heat} sudah pernah di-input di Cor (kombinasi ini harus unik).";
+                        $errors[] = "{$rowLabel}: Item {$code} #{$heat} sudah pernah di-input di Cor (kombinasi ini harus unik).";
+                        $failedRows[] = $gridIndex;
+                    } else {
+                        $validItems[] = $item;
                     }
                 }
             }
@@ -175,14 +186,19 @@ class InputController extends Controller
                 $qtyRusak = (int) ($item['rusak'] ?? 0);
                 $totalReported = $qtyHasil + $qtyRusak;
 
-                if ($totalReported <= 0)
+                if ($totalReported <= 0) {
                     continue;
+                }
+
+                $gridIndex = $item['grid_row_index'] ?? $index;
+                $rowLabel = "Baris " . ($gridIndex + 1);
 
                 $code = $item['code'] ?? '';
                 $heat = $item['heat_number'] ?? '';
 
                 if (empty($code) || empty($heat)) {
-                    $errors[] = "Baris " . ($index + 1) . ": Code dan Heat Number wajib diisi.";
+                    $errors[] = "{$rowLabel}: Code dan Heat Number wajib diisi.";
+                    $failedRows[] = $gridIndex;
                     continue;
                 }
 
@@ -192,12 +208,14 @@ class InputController extends Controller
                         'code' => $code,
                         'heat_number' => $heat,
                         'total_reported' => 0,
-                        'rows' => []
+                        'rows' => [],
+                        'items' => []
                     ];
                 }
 
                 $groupedItems[$key]['total_reported'] += $totalReported;
-                $groupedItems[$key]['rows'][] = $index + 1;
+                $groupedItems[$key]['rows'][] = $gridIndex;
+                $groupedItems[$key]['items'][] = $item;
             }
 
             foreach ($groupedItems as $key => $group) {
@@ -207,37 +225,58 @@ class InputController extends Controller
                     ->where('heat_number', $group['heat_number'])
                     ->first();
 
+                $isValidGroup = true;
                 if (!$sourceItem) {
                     $everExisted = \App\Models\ProductionItem::where('code', $group['code'])
                         ->where('heat_number', $group['heat_number'])
                         ->exists();
 
+                    $rowNumbers = implode(', ', array_map(function ($idx) {
+                        return $idx + 1; }, $group['rows']));
                     if ($everExisted) {
-                        $errors[] = "Item {$group['code']} #{$group['heat_number']} tidak memiliki stok di " . ucfirst($dept) . " (sudah habis atau dipindah).";
+                        $errors[] = "Baris {$rowNumbers}: Item {$group['code']} #{$group['heat_number']} tidak memiliki stok di " . ucfirst($dept) . " (sudah habis atau dipindah).";
                     } else {
-                        $errors[] = "Item {$group['code']} #{$group['heat_number']} ilegal: Belum pernah diproses di Cor.";
+                        $errors[] = "Baris {$rowNumbers}: Item {$group['code']} #{$group['heat_number']} ilegal: Belum pernah diproses di Cor.";
                     }
+                    $isValidGroup = false;
                 } else {
                     if ($group['total_reported'] > $sourceItem->qty_pcs) {
-                        $errors[] = "Item {$group['code']} #{$group['heat_number']} melebihi stok: total input {$group['total_reported']} pcs, tersedia {$sourceItem->qty_pcs} pcs di " . ucfirst($dept) . ".";
+                        $rowNumbers = implode(', ', array_map(function ($idx) {
+                            return $idx + 1; }, $group['rows']));
+                        $errors[] = "Baris {$rowNumbers}: Item {$group['code']} #{$group['heat_number']} melebihi stok: total input {$group['total_reported']} pcs, tersedia {$sourceItem->qty_pcs} pcs di " . ucfirst($dept) . ".";
+                        $isValidGroup = false;
+                    }
+                }
+
+                if ($isValidGroup) {
+                    foreach ($group['items'] as $item) {
+                        $validItems[] = $item;
+                    }
+                } else {
+                    foreach ($group['rows'] as $invalidIndex) {
+                        $failedRows[] = $invalidIndex;
                     }
                 }
             }
         }
 
-        if (count($errors) > 0) {
+        if (count($validItems) === 0) {
             return response()->json([
                 'success' => false,
+                'partial' => false,
                 'processed' => 0,
                 'errors' => $errors,
-                'message' => "Gagal menyimpan karena ada data yang tidak valid. Periksa daftar error.",
+                'failed_rows' => $failedRows,
+                'success_rows' => [],
+                'message' => "Gagal menyimpan karena tidak ada baris yang valid. Periksa daftar error.",
             ]);
         }
 
+        $successRows = [];
         try {
             \Illuminate\Support\Facades\DB::beginTransaction();
 
-            foreach ($data['items'] as $item) {
+            foreach ($validItems as $item) {
                 $lineNumber = null;
                 if (isset($item['line_number'])) {
                     $lineNumber = (int) filter_var($item['line_number'], FILTER_SANITIZE_NUMBER_INT) ?: null;
@@ -340,6 +379,10 @@ class InputController extends Controller
 
                     $processedCount++;
                 }
+
+                if (isset($item['grid_row_index'])) {
+                    $successRows[] = $item['grid_row_index'];
+                }
             }
 
             \Illuminate\Support\Facades\DB::commit();
@@ -349,12 +392,18 @@ class InputController extends Controller
             $errors[] = "System Error: " . $e->getMessage();
         }
 
+        $allSuccess = $processedCount > 0 && count($errors) == 0;
+        $partialSuccess = $processedCount > 0 && count($errors) > 0;
+
         return response()->json([
-            'success' => $processedCount > 0,
+            'success' => $allSuccess || $partialSuccess,
+            'partial' => $partialSuccess,
             'processed' => $processedCount,
             'errors' => $errors,
-            'message' => $processedCount . " Heat Number berhasil diproses. " . (count($errors) > 0 ? count($errors) . " gagal." : ""),
-            'redirect' => route('input.index', $dept)
+            'failed_rows' => $failedRows,
+            'success_rows' => $successRows,
+            'message' => $processedCount . " Kombinasi Heat Number berhasil diproses. " . (count($errors) > 0 ? count($errors) . " gagal." : ""),
+            'redirect' => $allSuccess ? route('input.index', $dept) : null
         ]);
     }
 
