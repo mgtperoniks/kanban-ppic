@@ -82,7 +82,19 @@
         const parseNum = (val) => {
             if (val === null || val === undefined || val === '' || val === '-') return null;
             if (typeof val === 'number') return val;
-            const clean = val.toString().replace(/[^-0-9.]/g, '');
+
+            let str = val.toString().trim();
+            // If comma is used as decimal separator (e.g. 28,49)
+            // But be careful not to break thousands separators if any (e.g. 1,000.00)
+            // Simpler approach for this context: if there is no dot but there is a comma, it's a decimal
+            if (str.includes(',') && !str.includes('.')) {
+                str = str.replace(',', '.');
+            } else if (str.includes(',') && str.includes('.')) {
+                // If both exist, assume standard dot decimal and strip comma
+                str = str.replace(/,/g, '');
+            }
+
+            const clean = str.replace(/[^-0-9.]/g, '');
             const num = parseFloat(clean);
             return isNaN(num) ? null : num;
         };
