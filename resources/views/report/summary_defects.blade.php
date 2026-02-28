@@ -67,6 +67,7 @@
                                 <th class="border border-gray-300 px-4 py-2 text-center w-16">No</th>
                                 <th class="border border-gray-300 px-4 py-2 text-left">Jenis Kerusakan</th>
                                 <th class="border border-gray-300 px-4 py-2 text-center w-32">Qty (pcs)</th>
+                                <th class="border border-gray-300 px-4 py-2 text-center w-32">Total Berat (kg)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -78,10 +79,13 @@
                                     <td class="border border-gray-300 px-4 py-2 text-center font-bold">
                                         {{ number_format($data['qty']) }}
                                     </td>
+                                    <td class="border border-gray-300 px-4 py-2 text-center font-bold">
+                                        {{ number_format($data['kg'], 2) }}
+                                    </td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="3" class="border border-gray-300 px-4 py-6 text-center text-gray-500 italic">
+                                    <td colspan="4" class="border border-gray-300 px-4 py-6 text-center text-gray-500 italic">
                                         Tidak ada data kerusakan pada periode ini.
                                     </td>
                                 </tr>
@@ -94,17 +98,23 @@
                                 <td class="border border-gray-300 px-4 py-2 text-center text-red-600 text-lg">
                                     {{ number_format($totalDefects) }}
                                 </td>
+                                <td class="border border-gray-300 px-4 py-2 text-center text-red-600 text-lg">
+                                    {{ number_format($totalKg, 2) }}
+                                </td>
                             </tr>
                             <tr class="text-gray-600 italic">
                                 <td colspan="2" class="border border-gray-300 px-4 py-2 text-right">Total Distribusi</td>
                                 <td class="border border-gray-300 px-4 py-2 text-center">
                                     {{ number_format($totalDistribution) }}
                                 </td>
+                                <td class="border border-gray-300 px-4 py-2 text-center bg-gray-100">
+                                    -
+                                </td>
                             </tr>
                             @if($totalDistribution > 0)
                                 <tr class="font-bold bg-blue-50 text-blue-800">
                                     <td colspan="2" class="border border-gray-300 px-4 py-2 text-right">Persentase Kerusakan</td>
-                                    <td class="border border-gray-300 px-4 py-2 text-center">
+                                    <td colspan="2" class="border border-gray-300 px-4 py-2 text-center">
                                         {{ number_format(($totalDefects / $totalDistribution) * 100, 2) }}%
                                     </td>
                                 </tr>

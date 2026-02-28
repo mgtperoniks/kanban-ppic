@@ -18,15 +18,11 @@
                         @forelse($defectTypes[$dept] ?? [] as $type)
                             <li class="flex items-center justify-between group p-2 rounded hover:bg-slate-50 transition-colors">
                                 <span class="text-slate-700 font-medium">{{ $type->name }}</span>
-                                <form action="{{ route('settings.defect-types.destroy', $type->id) }}" method="POST"
-                                    onsubmit="return confirm('Hapus jenis kerusakan ini?')">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit"
-                                        class="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
+                                <button type="button" onclick="editDefect({{ $type->id }}, '{{ addslashes($type->name) }}')"
+                                    class="text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
                             </li>
                         @empty
                             <li class="text-slate-400 text-sm italic py-2">Belum ada jenis kerusakan.</li>
@@ -51,4 +47,39 @@
             @endforeach
         </div>
     </div>
+
+    <!-- Hidden form for editing -->
+    <form id="editForm" method="POST" style="display: none;">
+        @csrf
+        @method('PUT')
+        <input type="hidden" name="name" id="editNameInput">
+    </form>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        function editDefect(id, currentName) {
+            Swal.fire({
+                title: 'Edit Jenis Kerusakan',
+                input: 'text',
+                inputValue: currentName,
+                inputPlaceholder: 'Masukkan nama kerusakan...',
+                showCancelButton: true,
+                confirmButtonText: 'Simpan',
+                cancelButtonText: 'Batal',
+                inputValidator: (value) => {
+                    if (!value || value.trim() === '') {
+                        return 'Nama kerusakan tidak boleh kosong!'
+                    }
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const form = document.getElementById('editForm');
+                    // Use Laravel's base url to handle subdirectory structures like /kanban-ppic/public/index.php/
+                    form.action = "{{ url('settings/defect-types') }}/" + id;
+                    document.getElementById('editNameInput').value = result.value.trim();
+                    form.submit();
+                }
+            });
+        }
+    </script>
 @endsection

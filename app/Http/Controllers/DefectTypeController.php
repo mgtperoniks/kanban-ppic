@@ -27,9 +27,16 @@ class DefectTypeController extends Controller
         return redirect()->route('settings.defect-types.index')->with('success', 'Jenis kerusakan berhasil ditambahkan.');
     }
 
-    public function destroy(DefectType $defectType)
+    public function update(Request $request, DefectType $defectType)
     {
-        $defectType->delete();
-        return redirect()->route('settings.defect-types.index')->with('success', 'Jenis kerusakan berhasil dihapus.');
+        $request->validate([
+            'name' => 'required|string|max:255',
+        ]);
+
+        $defectType->update([
+            'name' => $request->name
+        ]);
+
+        return redirect()->route('settings.defect-types.index')->with('success', 'Jenis kerusakan berhasil diperbarui.');
     }
 }

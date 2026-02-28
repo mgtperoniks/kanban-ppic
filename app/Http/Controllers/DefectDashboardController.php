@@ -16,12 +16,33 @@ class DefectDashboardController extends Controller
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date')) : now();
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date')) : now()->subMonths(6);
 
+        // Filter only items where the logged defects sum >= scrap_qty (Completed Status)
+        $completedItemFilter = function ($q) use ($startDate, $endDate) {
+            $q->whereBetween('production_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->whereRaw('production_items.scrap_qty > 0')
+                ->whereRaw('(SELECT COALESCE(SUM(qty), 0) FROM production_defects WHERE production_item_id = production_items.id) >= production_items.scrap_qty');
+        };
+
+        $selectedDefectType = $request->input('defect_type');
+        $selectedDepartment = $request->input('department');
+
+        $defectTypesList = DB::table('defect_types')->select('name')->distinct()->orderBy('name')->pluck('name');
+        $departmentsList = ['netto', 'bubut_od', 'bubut_cnc', 'bor', 'finish'];
+
+        $baseDefectQuery = ProductionDefect::query()
+            ->whereHas('item', $completedItemFilter)
+            ->join('defect_types', 'production_defects.defect_type_id', '=', 'defect_types.id');
+
+        if ($selectedDefectType) {
+            $baseDefectQuery->where('defect_types.name', $selectedDefectType);
+        }
+        if ($selectedDepartment) {
+            $baseDefectQuery->where('defect_types.department', $selectedDepartment);
+        }
+
         // 1. Donut Chart Data
         // A. By Defect Type (Global)
-        $byTypeData = ProductionDefect::whereHas('item', function ($q) use ($startDate, $endDate) {
-            $q->whereBetween('production_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')]);
-        })
-            ->join('defect_types', 'production_defects.defect_type_id', '=', 'defect_types.id')
+        $byTypeData = (clone $baseDefectQuery)
             ->select('defect_types.name', DB::raw('SUM(production_defects.qty) as total_qty'))
             ->groupBy('defect_types.name')
             ->orderByDesc('total_qty')
@@ -33,10 +54,7 @@ class DefectDashboardController extends Controller
         ];
 
         // B. By Department (Global)
-        $byDeptData = ProductionDefect::whereHas('item', function ($q) use ($startDate, $endDate) {
-            $q->whereBetween('production_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')]);
-        })
-            ->join('defect_types', 'production_defects.defect_type_id', '=', 'defect_types.id')
+        $byDeptData = (clone $baseDefectQuery)
             ->select('defect_types.department', DB::raw('SUM(production_defects.qty) as total_qty'))
             ->groupBy('defect_types.department')
             ->orderByDesc('total_qty')
@@ -76,10 +94,9 @@ class DefectDashboardController extends Controller
             ->get();
 
         // Refined Line Chart Data (PHP Aggregation for Weight Accuracy)
-        $lineChartRaw = ProductionDefect::with('item')
-            ->whereHas('item', function ($q) use ($startDate, $endDate) {
-                $q->whereBetween('production_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')]);
-            })
+        $lineChartRaw = (clone $baseDefectQuery)
+            ->with('item')
+            ->select('production_defects.*')
             ->get()
             ->groupBy(function ($defect) {
                 return $defect->item->production_date ? Carbon::parse($defect->item->production_date)->format('Y-W') : 'Unknown';
@@ -117,22 +134,34 @@ class DefectDashboardController extends Controller
                 foreach ($weekData as $defect) {
                     $pcs += $defect->qty;
                     // Calculate weight safely
-                    if ($defect->item && $defect->item->qty_pcs > 0) {
-                        $unitWeight = $defect->item->weight_kg / $defect->item->qty_pcs; // Total weight / Total item qty
-                        // BUT: weight_kg in item might be total weight of GOOD items only? 
-                        // Typically weight_kg is total weight. 
-                        // Let's assume weight_kg is for qty_pcs.
-                        $kg += $unitWeight * $defect->qty;
+                    if ($defect->item) {
+                        // Priority: finish_weight > netto_weight > bruto_weight > weight_kg
+                        // Note: These columns represent the weight PER PIECE
+                        $unitWeight = $defect->item->finish_weight ?? $defect->item->netto_weight ?? $defect->item->bruto_weight ?? $defect->item->weight_kg ?? 0;
+
+                        $kg += ($unitWeight * $defect->qty);
                     }
                 }
             }
 
             $lineChartPcs[] = $pcs;
-            $lineChartKg[] = round($kg / 1000, 3); // Convert to Tonase
+            $lineChartKg[] = round($kg, 2); // Use KG directly
 
             $current->addWeek();
         }
 
-        return view('dashboard.defects', compact('startDate', 'endDate', 'chartByType', 'chartByDept', 'lineChartLabels', 'lineChartPcs', 'lineChartKg'));
+        return view('dashboard.defects', compact(
+            'startDate',
+            'endDate',
+            'chartByType',
+            'chartByDept',
+            'lineChartLabels',
+            'lineChartPcs',
+            'lineChartKg',
+            'defectTypesList',
+            'departmentsList',
+            'selectedDefectType',
+            'selectedDepartment'
+        ));
     }
 }

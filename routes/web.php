@@ -56,7 +56,7 @@ Route::middleware(['auth'])->group(function () {
     // Defect Settings
     Route::get('/settings/defect-types', [\App\Http\Controllers\DefectTypeController::class, 'index'])->name('settings.defect-types.index');
     Route::post('/settings/defect-types', [\App\Http\Controllers\DefectTypeController::class, 'store'])->name('settings.defect-types.store');
-    Route::delete('/settings/defect-types/{defectType}', [\App\Http\Controllers\DefectTypeController::class, 'destroy'])->name('settings.defect-types.destroy');
+    Route::put('/settings/defect-types/{defectType}', [\App\Http\Controllers\DefectTypeController::class, 'update'])->name('settings.defect-types.update');
 
     // Customer Settings
     Route::get('/settings/customers', [\App\Http\Controllers\CustomerController::class, 'index'])->name('settings.customers.index');

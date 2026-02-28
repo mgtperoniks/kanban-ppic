@@ -107,6 +107,7 @@ class DefectReportController extends Controller
         $departments = ['cor', 'netto', 'bubut_od', 'bubut_cnc', 'bor', 'finish'];
         $results = null;
         $totalDefects = 0;
+        $totalKg = 0;
         $totalDistribution = 0;
 
         if ($request->has('generate')) {
@@ -149,7 +150,9 @@ class DefectReportController extends Controller
 
             // 2. Aggregate Defects for these HNs in this department
             $defects = ProductionDefect::whereHas('item', function ($q) use ($hnsInRange) {
-                $q->whereIn('heat_number', $hnsInRange);
+                $q->whereIn('heat_number', $hnsInRange)
+                    ->whereRaw('production_items.scrap_qty > 0')
+                    ->whereRaw('(SELECT COALESCE(SUM(qty), 0) FROM production_defects WHERE production_item_id = production_items.id) >= production_items.scrap_qty');
             })
                 ->whereHas('defectType', function ($q) use ($dept) {
                     $q->where('department', $dept);
@@ -158,19 +161,30 @@ class DefectReportController extends Controller
                 ->get();
 
             $results = $defects->groupBy('defect_type_id')->map(function ($group) {
+                $kg = 0;
+                foreach ($group as $defect) {
+                    if ($defect->item) {
+                        $unitWeight = $defect->item->finish_weight ?? $defect->item->netto_weight ?? $defect->item->bruto_weight ?? $defect->item->weight_kg ?? 0;
+                        $kg += ($unitWeight * $defect->qty);
+                    }
+                }
+
                 return [
                     'name' => $group->first()->defectType->name,
-                    'qty' => $group->sum('qty')
+                    'qty' => $group->sum('qty'),
+                    'kg' => round($kg, 2)
                 ];
             })->sortByDesc('qty');
 
             $totalDefects = $results->sum('qty');
+            $totalKg = $results->sum('kg');
         }
 
         return view('report.summary_defects', [
             'departments' => $departments,
             'results' => $results,
             'totalDefects' => $totalDefects,
+            'totalKg' => $totalKg,
             'totalDistribution' => $totalDistribution,
             'startDate' => $request->start_date ?? date('Y-m-01'),
             'endDate' => $request->end_date ?? date('Y-m-d'),
